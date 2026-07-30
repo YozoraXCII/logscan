@@ -277,7 +277,13 @@ function showGroup(group, recommendations) {
   header.append(title, copy);
   sectionContent.append(header);
 
-  const matches = recommendations.filter((item) => item.severity === group.key);
+  const matches = recommendations
+    .filter((item) => item.severity === group.key)
+    .sort((left, right) => {
+      if (group.key !== "warning") return 0;
+      return Number(left.title === "Kometa warnings detected")
+        - Number(right.title === "Kometa warnings detected");
+    });
   if (!matches.length) {
     const empty = document.createElement("div");
     empty.className = "empty-state";
