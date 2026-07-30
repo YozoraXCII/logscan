@@ -6,7 +6,7 @@ import tempfile
 import time
 
 from logscan_web.app import app
-from logscan_web.scanner import ScanError, _plain_title, scan_log
+from logscan_web.scanner import ScanError, _plain_title, _strip_emojis, scan_log
 from logscan_web.storage import ScanStore
 
 
@@ -36,6 +36,17 @@ class ScannerTests(unittest.TestCase):
 
     def test_title_cleanup_removes_markdown_and_trailing_bracket(self):
         self.assertEqual(_plain_title("⚠️ **WARNING]**"), "WARNING")
+
+    def test_recommendation_emojis_are_removed(self):
+        self.assertEqual(_strip_emojis("❌⏱️ **TIMEOUT ERROR**"), " **TIMEOUT ERROR**")
+        result = scan_log("kometa.log", VALID_LOG)
+        self.assertTrue(all("⚠" not in item["message"] for item in result.recommendations))
+
+    def test_reworked_title_does_not_change_severity(self):
+        warning_log = VALID_LOG.replace(b"[kometa.py:3] [INFO]", b"[kometa.py:3] [WARNING]")
+        result = scan_log("kometa.log", warning_log)
+        warning = next(item for item in result.recommendations if item["severity"] == "warning")
+        self.assertEqual(warning["title"], "Kometa warnings detected")
 
     def test_expired_scans_are_deleted(self):
         with tempfile.TemporaryDirectory() as root:

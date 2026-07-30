@@ -180,16 +180,10 @@ class StandaloneLogScanner:
 
             if re.search(wsl_pattern, content):
                 recommendation = (
-                    "💬🪟🐧 **WSL MEMORY RECOMMENDATION**\n"
-                    "According to Microsoft’s documentation, the amount of system memory (RAM) that gets allocated to WSL is limited to "
-                    "either 50% of your total memory or 8GB, whichever happens to be smaller.\n\n"
-                    "It is possible to override the maximum RAM allocation, we suggest googling 'WSL memory limit' to learn more otherwise the following may work for you:"
-                    "To override the maximum RAM allocation when running Windows Subsystem for Linux (WSL), you need to modify the configuration settings. Here are the steps to do this:\n"
-                    "1. Open a PowerShell window as an administrator.\n"
-                    "2. Run the command: `wsl --set-default-version 2` to set WSL version to 2 (WSL 2).\n"
-                    "3. Run the command: `wsl --set-memory <your_memory_limit>` to set the maximum memory limit for WSL (replace `<your_memory_limit>` with the desired memory limit, e.g., `4GB`).\n"
-                    "4. Restart WSL by running the command: `wsl --shutdown`.\n\n"
-                    "It is important to note that modifying these settings may require a reboot of your system."
+                    "**WSL memory allocation**\n"
+                    "Kometa is running in WSL. WSL may restrict the memory available to Kometa, which can affect larger runs. "
+                    "Review your WSL memory configuration and increase the allocation if necessary, then restart WSL for the change to take effect.\n"
+                    "Set an appropriate limit with `wsl --set-memory <your_memory_limit>` (for example, `4GB`), then run `wsl --shutdown`."
                 )
                 return recommendation
 
@@ -209,16 +203,16 @@ class StandaloneLogScanner:
 
             if db_cache_value >= total_memory_value:
                 # db_cache should not be greater than or equal to total memory
-                return f"❌ **PLEX DB CACHE ISSUE**\n" \
-                       f"The Plex DB cache setting (**{db_cache_value:.2f} GB**) is equal to or greater than the total memory " \
-                       f"(**{total_memory_value:.2f} GB**). Consider adjusting the Plex DB cache setting to a value **below** the total memory.\n" \
+                return f"**Plex database cache exceeds available memory**\n" \
+                       f"The configured Plex database cache ({db_cache_value:.2f} GB) is greater than or equal to detected system memory " \
+                       f"({total_memory_value:.2f} GB). Reduce `db_cache` to a value safely below available memory.\n" \
                        f"For more info on this setting: {url_info}\n" \
                        f"{disclaimer}"
 
             elif db_cache_value < 1:
                 # db_cache is less than 1 GB, recommend updating based on total memory
-                return f"💬💡️ **PLEX DB CACHE ADVICE**\n" \
-                       f"Consider updating the Plex DB cache setting from **{db_cache_value:.2f} GB**, to a value **greater** than **1 GB** based on the total memory of **{total_memory_value:.2f} GB**.\nSetting `db_cache: 1024` within the plex settings in your config.yml is effectively 1024MB which is 1GB. " \
+                return f"**Plex database cache may be undersized**\n" \
+                       f"The configured cache is {db_cache_value:.2f} GB on a system with {total_memory_value:.2f} GB of memory. Consider increasing `db_cache` above 1 GB where available memory and workload justify it.\n" \
                        f"For more info on this setting: {url_info}\n" \
                        f"{disclaimer}"
 
@@ -237,25 +231,22 @@ class StandaloneLogScanner:
                 overlay_value = self.contains_overlay_files(content)
 
             if memory_value is None:
-                return "Error: Memory value not found in content."
+                return "**Memory information unavailable**\nThe log does not contain the system memory information required for this check. Upload a complete log if you want memory-specific recommendations."
 
             if memory_value < 4:
                 if overlay_value:
-                    return f"⚠️ **MEMORY RECOMMENDATION**\n" \
-                           f"The memory value is {memory_value:.2f} GB, which is less than 4 GB. " \
-                           f"We advise having at least 8GB of RAM when running Kometa with overlays (we have detected overlays) to avoid potential out-of-memory issues.\n\n" \
+                    return f"**Insufficient memory for overlays**\n" \
+                           f"Kometa detected {memory_value:.2f} GB of memory and an overlay workload. At least 8 GB is recommended to reduce the risk of slow or failed runs.\n\n" \
                            f"{disclaimer}"
                 else:
-                    return f"⚠️ **MEMORY RECOMMENDATION**\n" \
-                           f"The memory value is {memory_value:.2f} GB, which is less than 4 GB. " \
-                           f"We advise having at least 4GB of RAM when running Kometa without overlays (we have NOT detected overlays) to avoid potential out-of-memory issues.\n\n" \
+                    return f"**Low memory available**\n" \
+                           f"Kometa detected {memory_value:.2f} GB of memory without overlays. At least 4 GB is recommended for reliable operation.\n\n" \
                            f"{disclaimer}"
 
             elif memory_value < 8:
                 if overlay_value:
-                    return f"⚠️ **MEMORY RECOMMENDATION**\n" \
-                           f"The memory value is {memory_value:.2f} GB, which is less than 8 GB. " \
-                           f"We advise having at least 8GB of RAM when running Kometa with overlays (we have detected overlays) for optimal performance.\n\n" \
+                    return f"**Memory below the overlay recommendation**\n" \
+                           f"Kometa detected {memory_value:.2f} GB of memory and an overlay workload. Increase available memory to at least 8 GB for more reliable processing.\n\n" \
                            f"{disclaimer}"
                 else:
                     return None  # No specific recommendation for memory < 8GB without overlays
@@ -264,7 +255,7 @@ class StandaloneLogScanner:
 
     def calculate_recommendation(self, kometa_scheduled_time, maintenance_start_time=None, maintenance_end_time=None):
             if not kometa_scheduled_time:
-                return "Error: Plex scheduled time is missing."
+                return "**Kometa schedule information unavailable**\nThe log does not contain the scheduled start time required for maintenance-conflict analysis. Confirm that the log is complete and includes the startup configuration."
 
             kometa_scheduled_time = datetime.strptime(kometa_scheduled_time, '%H:%M').time()
 
@@ -303,17 +294,17 @@ class StandaloneLogScanner:
             plex_maint_url = "https://support.plex.tv/articles/202197488-scheduled-server-maintenance/"
 
             if run_time_in_minutes > 1440:
-                return f"❌⏰ **KOMETA RUN TIME > 24 HOURS**\nThis Run took: `{self.run_time}`\nTime between Kometa scheduled time and Plex Maintenance start: `{time_buffer}`\nKometa scheduled start time: `{kometa_scheduled_time.strftime('%-H:%M')}`\nPlex Scheduled Maintenance start time: `{maintenance_start_time.strftime('%-H:%M')}`\nPlex Scheduled Maintenance end time: `{maintenance_end_time.strftime('%-H:%M')}`\nIf your Kometa runs typically take this long [this run took `{self.run_time}`], your Kometa run time will coincide with the next Plex maintenance period as this run is greater than 24 hours.\n\nThe suggestion we can make at this point is to find ways to break down your run into smaller chunks and schedule them on different days.\nFor more information on Plex Maintenance, see {plex_maint_url}"
+                return f"**Kometa run exceeds 24 hours**\nThe detected run duration is `{self.run_time}`. Split the workload into smaller scheduled runs to reduce overlap with Plex maintenance and improve recovery from failures.\nTime between Kometa scheduled time and Plex Maintenance start: `{time_buffer}`\nKometa scheduled start time: `{kometa_scheduled_time.strftime('%-H:%M')}`\nPlex Scheduled Maintenance start time: `{maintenance_start_time.strftime('%-H:%M')}`\nPlex Scheduled Maintenance end time: `{maintenance_end_time.strftime('%-H:%M')}`\nFor more information on Plex Maintenance, see {plex_maint_url}"
 
             if run_time_in_minutes > buffer_until_next_plex_maintenance:
-                return f"❌⏰ **KOMETA RUN TIME > BUFFER BEFORE MAINTENANCE**\nThis Run took: `{self.run_time}`\nTime between Kometa Scheduled time and Plex Maintenance start: `{time_buffer}`\nKometa scheduled start time: `{kometa_scheduled_time.strftime('%-H:%M')}`\nPlex Scheduled Maintenance start time: `{maintenance_start_time.strftime('%-H:%M')}`\nPlex Scheduled Maintenance end time: `{maintenance_end_time.strftime('%-H:%M')}`\nIf your Kometa runs typically take this long [this run took `{self.run_time}`], your Kometa run time will coincide with the next Plex maintenance period. Adjust the Kometa Scheduled start time to `{maintenance_end_time.strftime('%-H:%M')}` (if needed) AND adjust the Plex Scheduled Maintenance start time to be later.\nFor more information on Plex Maintenance, see {plex_maint_url}"
+                return f"**Kometa run overlaps the next Plex maintenance window**\nThe run duration (`{self.run_time}`) exceeds the available interval before maintenance. Move the Kometa start time, adjust Plex maintenance, or divide the workload into shorter runs.\nTime between Kometa scheduled time and Plex Maintenance start: `{time_buffer}`\nKometa scheduled start time: `{kometa_scheduled_time.strftime('%-H:%M')}`\nPlex Scheduled Maintenance start time: `{maintenance_start_time.strftime('%-H:%M')}`\nPlex Scheduled Maintenance end time: `{maintenance_end_time.strftime('%-H:%M')}`\nFor more information on Plex Maintenance, see {plex_maint_url}"
 
             if maintenance_start_datetime <= plex_scheduled_datetime < maintenance_end_datetime:
                 # Provide a message for the case when kometa_scheduled_time is between maintenance start and end times
-                return f"❌⏰ **KOMETA SCHEDULED TIME CONFLICT**\nThis Run took: `{self.run_time}`\nTime between Kometa Scheduled time and Plex Maintenance start: `{time_buffer}`\nKometa scheduled start time: `{kometa_scheduled_time.strftime('%-H:%M')}`\nPlex Scheduled Maintenance start time: `{maintenance_start_time.strftime('%-H:%M')}`\nPlex Scheduled Maintenance end time: `{maintenance_end_time.strftime('%-H:%M')}`\nYou are within the maintenance window between Plex maintenance start time: `{maintenance_start_time.strftime('%-H:%M')}` and end time: `{maintenance_end_time.strftime('%-H:%M')}`. Adjust the Kometa Scheduled start time to `{maintenance_end_time.strftime('%-H:%M')}` or adjust the Plex Scheduled Maintenance times to end prior to the Kometa Scheduled run time.\nFor more information on Plex Maintenance, see {plex_maint_url}"
+                return f"**Kometa schedule conflicts with Plex maintenance**\nThe configured Kometa start time (`{kometa_scheduled_time.strftime('%-H:%M')}`) falls within the Plex maintenance window (`{maintenance_start_time.strftime('%-H:%M')}`–`{maintenance_end_time.strftime('%-H:%M')}`). Schedule Kometa outside this interval or adjust the maintenance window.\nThis Run took: `{self.run_time}`\nFor more information on Plex Maintenance, see {plex_maint_url}"
 
             if run_time_in_minutes > time_before_plex_maintenance:
-                return f"❌⏰ **KOMETA RUN TIME > TIME BEFORE MAINTENANCE**\nThis Run took: `{self.run_time}`\nTime between Kometa Scheduled time and Plex Maintenance start: `{time_buffer}`\nKometa scheduled start time: `{kometa_scheduled_time.strftime('%-H:%M')}`\nPlex Scheduled Maintenance start time: `{maintenance_start_time.strftime('%-H:%M')}`\nPlex Scheduled Maintenance end time: `{maintenance_end_time.strftime('%-H:%M')}`\nIf your Kometa runs typically take this long [this run took `{self.run_time}`], your Kometa run time will coincide with the next Plex maintenance period. Consider moving the Kometa scheduled start time to `{maintenance_end_time.strftime('%-H:%M')}` or adjust the Plex Scheduled Maintenance times to end prior to the Kometa Scheduled run time.\nFor more information on Plex Maintenance, see {plex_maint_url}"
+                return f"**Kometa may still be running when Plex maintenance begins**\nThe detected run duration (`{self.run_time}`) exceeds the time available before maintenance. Start Kometa after maintenance, move the maintenance window, or reduce the run workload.\nTime between Kometa scheduled time and Plex Maintenance start: `{time_buffer}`\nKometa scheduled start time: `{kometa_scheduled_time.strftime('%-H:%M')}`\nPlex Scheduled Maintenance start time: `{maintenance_start_time.strftime('%-H:%M')}`\nPlex Scheduled Maintenance end time: `{maintenance_end_time.strftime('%-H:%M')}`\nFor more information on Plex Maintenance, see {plex_maint_url}"
 
             return None
 
@@ -617,9 +608,8 @@ class StandaloneLogScanner:
                 url_line = "[https://kometa.wiki/en/latest/config/anidb]"
                 formatted_errors = self.format_contiguous_lines(anidb69_errors)
                 anidb69_error_message = (
-                    "❌ **ANIDB69 ERROR**\n"
-                    "Kometa uses AniDB ID 69 to test that it can connect to AniDB.\n"
-                    "This error indicates that the test request sent to AniDB failed and AniDB could not be reached.\n"
+                    "**AniDB connection test failed**\n"
+                    "Kometa could not complete its AniDB connectivity test using AniDB ID 69. Verify network access and the AniDB configuration, then retry the run.\n"
                     f"For more information on configuring AniDB, {url_line}\n"
                     f"{len(anidb69_errors)} line(s) with ANIDB69 errors. Line number(s): {formatted_errors}"
                 )
@@ -629,9 +619,8 @@ class StandaloneLogScanner:
                 url_line = "[https://kometa.wiki/en/latest/config/anidb]"
                 formatted_errors = self.format_contiguous_lines(anidb_auth_errors)
                 anidb_auth_errors_message = (
-                    "❌ **ANIDB AUTH ERRORS**\n"
-                    "Kometa uses AniDB settings to connect to AniDB.\n"
-                    "This error indicates that the setting is not correctly setup in config.yml.\n"
+                    "**AniDB authentication failed**\n"
+                    "Kometa could not authenticate with AniDB. Review the AniDB credentials in `config.yml`, correct any invalid values, and retry the run.\n"
                     f"For more information on configuring AniDB, {url_line}\n"
                     f"{len(anidb_auth_errors)} line(s) with ANIDB AUTH errors. Line number(s): {formatted_errors}"
                 )
@@ -641,11 +630,9 @@ class StandaloneLogScanner:
                 url_line = "[https://kometa.wiki/en/latest/config/trakt/?q=api]"
                 formatted_errors = self.format_contiguous_lines(api_blank_errors)
                 api_blank_error_message = (
-                    "❌🔒 **BLANK API KEY ERROR**\n"
-                    "An API key is required for certain services, and it appears to be blank in your configuration.\n"
-                    "Make sure to provide the required API key to enable proper functionality.\n"
+                    "**Required API key is missing**\n"
+                    "A configured service requires an API key, but the value is empty. Identify the service on the referenced log lines and add a valid API key to `config.yml`.\n"
                     f"For more information on configuring API keys, {url_line}\n"
-                    "In the Kometa discord thread, type `!wiki` for more information and search for the service with the missing apikey \n"
                     f"{len(api_blank_errors)} line(s) with BLANK API KEY errors. Line number(s): {formatted_errors}"
                 )
                 special_check_lines.append(api_blank_error_message)
@@ -654,9 +641,8 @@ class StandaloneLogScanner:
                 url_line = "[https://forums.plex.tv/t/refresh-endpoint-put-post-requests-started-throwing-404s-in-version-1-32-7-7484/853588]"
                 formatted_errors = self.format_contiguous_lines(bad_version_found_errors)
                 bad_version_found_errors_message = (
-                    "💥 **BAD PLEX VERSION ERROR**\n"
-                    "You are running a version of Plex that is known to have issues with Kometa.\n"
-                    "You should downgrade/upgrade to a version that is not `1.32.7.*`.\n"
+                    "**Incompatible Plex version detected**\n"
+                    "Plex version `1.32.7.*` has known compatibility issues with Kometa. Upgrade or downgrade Plex to a supported release before running Kometa again.\n"
                     f"For more information on this issue, {url_line}\n"
                     f"{len(bad_version_found_errors)} line(s) with Plex Version 1.32.7.*. Line number(s): {formatted_errors}"
                 )
@@ -666,8 +652,8 @@ class StandaloneLogScanner:
                 url_line = "[https://kometa.wiki/en/latest/config/settings#cache]"
                 formatted_errors = self.format_contiguous_lines(cache_false)
                 cache_false_message = (
-                    "💬 **Kometa CACHE**\n"
-                    "Kometa cache setting is set to false(`cache: false`). Normally, you would want this set to true to improve performance.\n"
+                    "**Kometa cache is disabled**\n"
+                    "The configuration contains `cache: false`. Enable the cache unless you have a specific reason not to, as caching generally improves run performance.\n"
                     f"For more information on handling this, {url_line}\n"
                     f"{len(cache_false)} line(s) with `cache: false`. Line number(s): {formatted_errors}"
                 )
@@ -676,8 +662,8 @@ class StandaloneLogScanner:
             if checkFiles:
                 formatted_errors = self.format_contiguous_lines(checkFiles)
                 checkFiles_message = (
-                    "⚠️ **CHECKFILES=1 DETECTED**\n"
-                    "`checkFiles=1` detected. Notifying Kometa staff.\n"
+                    "**Diagnostic file check enabled**\n"
+                    "The log contains `checkFiles=1`, indicating that diagnostic file checking is enabled. Include the referenced lines when requesting support from the Kometa team.\n"
                     f"{len(checkFiles)} line(s) with `checkFiles=1` messages. Line number(s): {formatted_errors}"
                 )
                 special_check_lines.append(checkFiles_message)
@@ -686,7 +672,7 @@ class StandaloneLogScanner:
             #     url_line = "[https://kometa.wiki/en/latest/files/dynamic_types/?h=latest#imdb-awards]"
             #     formatted_errors = self.format_contiguous_lines(current_year)
             #     current_year_message = (
-            #             "⚠️ **LEGACY SCHEMA DETECTED**\n"
+            #             "**Legacy schema detected**\n"
             #             "As of 1.20 `current_year` is no longer used and should be replaced with `latest`.\n"
             #             f"For more information on handling these, {url_line}\n"
             #             f"{len(current_year)} line(s) with `current_year` issues. Line number(s): {formatted_errors}"
@@ -697,8 +683,8 @@ class StandaloneLogScanner:
                 url_line = "[https://kometa.wiki/en/latest/kometa/faqs/?h=other_award#pmm-120-release-changes]"
                 formatted_errors = self.format_contiguous_lines(other_award)
                 other_award_message = (
-                    "⚠️ **LEGACY SCHEMA DETECTED**\n"
-                    "As of 1.20 `other_award` is no longer used and should be removed. All of those awards now have their own individual files.\n"
+                    "**Legacy `other_award` setting detected**\n"
+                    "The `other_award` setting is no longer supported. Remove it and configure the relevant award files individually.\n"
                     f"For more information on handling these, {url_line}\n"
                     f"{len(other_award)} line(s) with `other_award` issues. Line number(s): {formatted_errors}"
                 )
@@ -708,9 +694,8 @@ class StandaloneLogScanner:
                 url_line = "[https://kometa.wiki/en/latest/kometa/logs/?h=%5Bcritical%5D#critical]"
                 formatted_errors = self.format_contiguous_lines(critical_errors)
                 critical_error_message = (
-                    "💥 **[CRITICAL]**\n"
-                    f"Critical messages found in your attached log.\n"
-                    f"There is a very strong likelihood that Kometa aborted the run or part of the run early thus not all of what you wanted was applied.\n"
+                    "**Critical Kometa messages detected**\n"
+                    "The log contains critical messages that may have stopped all or part of the run. Review the referenced lines first and resolve their underlying causes before retrying.\n"
                     f"For more information on handling these, {url_line}\n"
                     f"{len(critical_errors)} line(s) with [CRITICAL] messages. Line number(s): {formatted_errors}"
                 )
@@ -720,9 +705,8 @@ class StandaloneLogScanner:
                 url_line = "[https://kometa.wiki/en/latest/kometa/logs/?h=%5Berror%5D#error]"
                 formatted_errors = self.format_contiguous_lines(error_errors)
                 error_error_message = (
-                    "❌ **[ERROR]**\n"
-                    f"Error messages found in your attached log.\n"
-                    f"There is a very strong likelihood that Kometa did not complete all of what you wanted. Some [ERROR] lines can be ignored.\n"
+                    "**Kometa errors detected**\n"
+                    "The log contains error messages, and some requested work may not have completed. Review each referenced error in context and address unresolved errors before the next run.\n"
                     f"For more information on handling these, {url_line}\n"
                     f"{len(error_errors)} line(s) with [ERROR] messages. Line number(s): {formatted_errors}"
                 )
@@ -732,9 +716,8 @@ class StandaloneLogScanner:
                 url_line = "[https://kometa.wiki/en/latest/kometa/logs/?h=%5Bwarning%5D#warning]"
                 formatted_errors = self.format_contiguous_lines(warning_errors)
                 warning_error_message = (
-                    f"⚠️ **[WARNING]**\n"
-                    f"Warning messages found in your attached log.\n"
-                    f"This is a Kometa warning and usually does not require any immediate action. Most [WARNING] lines can be ignored.\n"
+                    "**Kometa warnings detected**\n"
+                    "The log contains warning messages. Review the referenced lines to confirm that they are expected for your configuration.\n"
                     f"For more information on handling these, {url_line}\n"
                     f"{len(warning_errors)} line(s) with [WARNING] messages. Line number(s): {formatted_errors}"
                 )
@@ -744,12 +727,8 @@ class StandaloneLogScanner:
                 url_line = "[https://kometa.wiki/en/latest/kometa/logs/#warning]"
                 formatted_errors = self.format_contiguous_lines(convert_errors)
                 convert_error_message = (
-                    "💬 **CONVERT WARNING**\n"
-                    "Convert Warning: No * ID Found for * ID.\n"
-                    "These sorts of errors indicate that the thing can't be cross-referenced between sites.  For example:\n\n"
-                    "Convert Warning: No TVDb ID Found for TMDb ID: 15733\n\n"
-                    "In the above scenario, the TMDB record for `The Two Mrs. Grenvilles` `ID 15733` didn't contain a TVDB ID. This could be because the record just hasn't been updated, or because `The Two Mrs. Grenvilles` isn't listed on TVDB.\n\n"
-                    "The fix is for someone `like you, perhaps` to go to the relevant site and fill in the missing data.\n"
+                    "**Metadata ID conversion failed**\n"
+                    "Kometa could not cross-reference an item because a required external ID was unavailable. Verify the item on the source services and correct the missing ID where possible.\n"
                     f"For more information on handling these, {url_line}\n"
                     f"{len(convert_errors)} line(s) with Convert Warnings. Line number(s): {formatted_errors}"
                 )
@@ -759,9 +738,8 @@ class StandaloneLogScanner:
                 url_line = "[https://kometa.wiki/en/latest/kometa/logs/#error]"
                 formatted_errors = self.format_contiguous_lines(corrupt_image_errors)
                 corrupt_image_message = (
-                    "❌ **CORRUPT FILE ERROR**\n"
-                    "Likely, when processing overlays, Kometa encountered a file that it could not process because it was corrupt.\n"
-                    "Review the lines in your log file and based on the lines shown here and determine if those files are ok or not with your favorite image editor.\n"
+                    "**Unreadable image file detected**\n"
+                    "Kometa could not identify an image file. Confirm that it is not corrupt, uses a supported format, and can be opened normally.\n"
                     f"For more information on handling these, {url_line}\n"
                     f"{len(corrupt_image_errors)} line(s) with `PIL.UnidentifiedImageError` reported. Line number(s): {formatted_errors}"
                 )
@@ -771,8 +749,8 @@ class StandaloneLogScanner:
                 url_line = "[https://kometa.wiki/en/latest/config/operations/#delete-collections]"
                 formatted_errors = self.format_contiguous_lines(delete_unmanaged_collections_errors)
                 delete_unmanaged_collections_errors_message = (
-                    "⚠️ **LEGACY SCHEMA DETECTED**\n"
-                    "`delete_unmanaged_collections` is a Library operation and should be adjusted in your config file accordingly.\n"
+                    "**Legacy collection deletion setting detected**\n"
+                    "`delete_unmanaged_collections` is no longer supported. Replace it with the current collection deletion setting.\n"
                     f"For more information on handling these, {url_line}\n"
                     f"{len(delete_unmanaged_collections_errors)} line(s) with `delete_unmanaged_collections` errors. Line number(s): {formatted_errors}"
                 )
@@ -782,13 +760,9 @@ class StandaloneLogScanner:
                 url_line = "[https://kometa.wiki/en/latest/kometa/faqs/?h=flixpatrol#flixpatrol]"
                 formatted_errors = self.format_contiguous_lines(flixpatrol_errors)
                 flixpatrol_error_message = (
-                    "❌ **FLIXPATROL ERROR**\n"
-                    "There was an issue with FlixPatrol data.\n"
-                    "This is a known issue with Kometa 1.19.0 (master/latest branch).\n"
-                    "Switch to the 1.19.1 nightly21 or greater Kometa release for a fix.\n"
-                    "In the Kometa discord thread, for more information on how to switch branches, type `!branch`.\n"
+                    "**FlixPatrol data could not be parsed**\n"
+                    "Kometa received an unexpected response from FlixPatrol. Confirm that the source remains available and review current Kometa guidance.\n"
                     f"For more information on handling FlixPatrol errors, {url_line}\n"
-                    "If the problem persists, your IP address might be banned by FlixPatrol. Contact their support to have it unbanned.\n"
                     f"{len(flixpatrol_errors)} line(s) with FlixPatrol errors. Line number(s): {formatted_errors}"
                 )
                 special_check_lines.append(flixpatrol_error_message)
@@ -798,11 +772,9 @@ class StandaloneLogScanner:
                 url_line2 = "[https://discord.com/channels/822460010649878528/1099773891733377065/1214929432754651176]"
                 formatted_errors = self.format_contiguous_lines(flixpatrol_paywall)
                 flixpatrol_paywall_message = (
-                    "❌💰 **FLIXPATROL PAYWALL ERROR**\n"
-                    "FlixPatrol decided to implement a Paywall which causes Kometa to no longer gather data from them.\n"
-                    "Even if you pay, this will not work with Kometa.\n"
+                    "**FlixPatrol source requires a subscription**\n"
+                    "The configured FlixPatrol list is unavailable with the current account access. Use an accessible list or provide the required subscription.\n"
                     f"For more information on the FlixPatrol paywall, {url_line}\n"
-                    f"As of Kometa 1.20.0-nightly34 (you are on {self.current_kometa_version}), we have eliminated FlixPatrol. See this announcement: {url_line2}\n"
                     f"{len(flixpatrol_paywall)} line(s) with `- pmm: flixpatrol` detected. Line number(s): {formatted_errors}"
                 )
                 special_check_lines.append(flixpatrol_paywall_message)
@@ -811,9 +783,8 @@ class StandaloneLogScanner:
                 url_line = "[https://kometa.wiki/en/latest/config/overview/?h=configuration]"
                 formatted_errors = self.format_contiguous_lines(git_kometa_errors)
                 git_kometa_error_message = (
-                    "💬 **OLD Kometa YAML**\n"
-                    "You are using an old config.yml with references to metadata files that date to a version of Kometa that is pre 1.18\n"
-                    "In the Kometa discord thread, type `!118` for more information.\n"
+                    "**Legacy Kometa repository reference detected**\n"
+                    "The configuration still references `git: PMM`. Update it to the current Kometa repository reference.\n"
                     f"For more information on handling this, {url_line}\n"
                     f"{len(git_kometa_errors)} line(s) with OLD Kometa YAML. Line number(s): {formatted_errors}"
                 )
@@ -823,9 +794,8 @@ class StandaloneLogScanner:
                 url_line = "[https://kometa.wiki/en/latest/config/overview/?h=configuration]"
                 formatted_errors = self.format_contiguous_lines(pmm_legacy_errors)
                 pmm_legacy_error_message = (
-                    "💬 **PRE KOMETA YAML**\n"
-                    "You are using an old config.yml with references to metadata files that date to a version of this script that is pre Kometa\n"
-                    "In your config.yml, search for `- pmm: ` and replace with `- default: ` .\n"
+                    "**Legacy PMM configuration detected**\n"
+                    "The configuration contains the former `pmm:` schema. Migrate it to the current Kometa schema.\n"
                     f"For more information on handling this, {url_line}\n"
                     f"{len(pmm_legacy_errors)} line(s) with PRE Kometa YAML. Line number(s): {formatted_errors}"
                 )
@@ -835,8 +805,8 @@ class StandaloneLogScanner:
                 url_line = "[https://www.google.com]"
                 formatted_errors = self.format_contiguous_lines(image_size)
                 image_size_message = (
-                    "❌ **IMAGE SIZE ERRORS**\n"
-                    "It seems that you are attempting to upload or apply artwork and it's greater than the maximum `10MB`.\n"
+                    "**Image exceeds the permitted size**\n"
+                    "A configured image exceeds the destination service's size limit. Resize or optimize the image and retry the run.\n"
                     f"This usually means that you have internal server errors (500) as well in this log. Change the image to one that is less than 10MB. For more information on handling this, {url_line}\n"
                     f"{len(image_size)} line(s) with IMAGE SIZE errors. Line number(s): {formatted_errors}"
                 )
@@ -845,10 +815,8 @@ class StandaloneLogScanner:
             if incomplete_message:
                 url_line = "[https://kometa.wiki/en/latest/kometa/logs/#providing-log-files-on-discord]"
                 incomplete_errors_message = (
-                    "❌🛠️ **INCOMPLETE LOGS**\n"
-                    f"{incomplete_message}\n"
-                    "**The attached file seems incomplete. Without a complete log file troubleshooting is limited as we might be missing valuable information!**\n"
-                    "Type `!logs` for more information about providing logs."
+                    "**Log appears incomplete**\n"
+                    "The uploaded file does not contain a complete Kometa run. Upload the full log, including the end-of-run summary, for reliable diagnostics.\n"
                     f"For more information on providing logs, {url_line}\n"
                 )
                 special_check_lines.append(incomplete_errors_message)
@@ -857,9 +825,8 @@ class StandaloneLogScanner:
                 url_line = "[https://kometa.wiki/en/latest/kometa/faqs/?h=errors+issues#errors-issues]"
                 formatted_errors = self.format_contiguous_lines(internal_server_errors)
                 internal_server_error_message = (
-                    "💥 **INTERNAL SERVER ERROR**\n"
-                    "An internal server error has occurred. This could be due to an issue with the service's server.\n"
-                    "In the Kometa discord thread, type `!500` for more information.\n"
+                    "**Remote service returned an internal error**\n"
+                    "A service used by Kometa returned a server-side error. Retry later; if it persists, review the service and its status.\n"
                     f"For more information on handling internal server errors, {url_line}\n"
                     f"{len(internal_server_errors)} line(s) with INTERNAL SERVER errors. Line number(s): {formatted_errors}"
                 )
@@ -869,9 +836,8 @@ class StandaloneLogScanner:
                 url_line = "[https://kometa.wiki/en/latest/kometa/install/images/?h=linuxserver#linuxserver]"
                 formatted_errors = self.format_contiguous_lines(lsio_errors)
                 lsio_error_message = (
-                    "⚠️🖥️ **LINUXSERVER IMAGE DETECTED**\n"
-                    "You are not using the official Kometa container image.\n"
-                    "In the Kometa discord thread, type `!lsio` for more information.\n"
+                    "**LinuxServer container image detected**\n"
+                    "This installation uses the LinuxServer image. Consider migrating to the official image for current updates and support.\n"
                     f"For more information on this, {url_line}\n"
                     f"{len(lsio_errors)} line(s) with LINUXSERVER IMAGE issues. Line number(s): {formatted_errors}"
                 )
@@ -881,10 +847,8 @@ class StandaloneLogScanner:
                 url_line = "[https://kometa.wiki/en/latest/config/myanimelist]"
                 formatted_errors = self.format_contiguous_lines(mal_connection_errors)
                 mal_connection_error_message = (
-                    "❌ **MY ANIME LIST CONNECTION ERROR**\n"
-                    "There was an issue connecting to My Anime List (MAL) service.\n"
-                    "This will affect any functionality that relies on MAL data.\n"
-                    "In the Kometa discord thread, type `!mal` for more information\n"
+                    "**MyAnimeList connection failed**\n"
+                    "Verify the configured credentials, network access, and service availability before retrying.\n"
                     f"For more information on configuring the My Anime List (MAL) service, {url_line}\n"
                     f"{len(mal_connection_errors)} line(s) with MY ANIME LIST CONNECTION errors. Line number(s): {formatted_errors}"
                 )
@@ -894,10 +858,8 @@ class StandaloneLogScanner:
                 url_line = "[https://kometa.wiki/en/latest/config/operations]"
                 formatted_errors = self.format_contiguous_lines(mass_update_errors)
                 mass_update_errors_message = (
-                    "❌ **MASS_*_UPDATE ERROR**\n"
-                    "You have specified a `mass_*_update` operation in your config file however you have not configured the corresponding service so this will never work.\n"
-                    "Review each of the lines mentioned in this message to understand what all the config issues are.\n"
-                    "In the Kometa discord thread, type `!wiki` for more information and search.\n"
+                    "**Mass update prerequisite failed**\n"
+                    "A mass update was skipped because a required preceding operation did not complete. Resolve the earlier error, then rerun Kometa.\n"
                     f"For more information on `mass_*_update` operations, {url_line}\n"
                     f"{len(mass_update_errors)} line(s) with `mass_*_update` config errors. Line number(s): {formatted_errors}"
                 )
@@ -907,9 +869,8 @@ class StandaloneLogScanner:
                 url_line = "[https://kometa.wiki/en/latest/files/builders/mdblist/?h=mdblist+builders]"
                 formatted_errors = self.format_contiguous_lines(mdblist_attr_errors)
                 mdblist_attr_error_message = (
-                    f"❌ **MDBLIST ATTRIBUTE ERROR**\n"
-                    f"MDBList functionality does not currently support season-level collections.\n"
-                    f"In the Kometa discord thread, type `!wiki` for more information and search.\n"
+                    "**MDBList attribute is invalid at this collection level**\n"
+                    "`mdblist_list` cannot be used for a season-level collection. Remove it or use a supported collection level.\n"
                     f"For more information on MDBList configuration, {url_line}\n"
                     f"{len(mdblist_attr_errors)} line(s) with MDBList attribute errors. Line number(s): {formatted_errors}"
                 )
@@ -919,10 +880,8 @@ class StandaloneLogScanner:
                 url_line = "[https://kometa.wiki/en/latest/config/mdblist/?h=mdblist+attributes#mdblist-attributes]"
                 formatted_errors = self.format_contiguous_lines(mdblist_errors)
                 mdblist_error_message = (
-                    f"❌ **MDBLIST ERROR**\n"
-                    f"Your configuration contains an invalid API key for MdbList.\n"
-                    f"This will cause any services that rely on MdbList to fail.\n"
-                    f"In the Kometa discord thread, type `!wiki` for more information and search.\n"
+                    "**MDBList API key is invalid**\n"
+                    "Replace the configured key with a valid MDBList API key and retry the run.\n"
                     f"For more information on configuring MdbList, {url_line}\n"
                     f"{len(mdblist_errors)} line(s) with MDBLIST errors. Line number(s): {formatted_errors}"
                 )
@@ -932,9 +891,8 @@ class StandaloneLogScanner:
                 url_line = "[https://kometa.wiki/en/latest/config/mdblist/?h=mdblist+attributes#mdblist-attributes]"
                 formatted_errors = self.format_contiguous_lines(mdblist_api_limit_errors)
                 mdblist_api_limit_error_message = (
-                    f"❌ **MDBLIST API LIMIT ERROR**\n"
-                    f"You have hit the MDBLIST API LIMIT. The free apikey is limited to 1000 requests per day so if you hit your limit Kometa should be able to pick up where it left off the next day as long as the Kometa cache setting is enabled in yur config.yml file.\n"
-                    f"This will cause any metadata updates that rely on MdbList to fail until the limit is reset (usually daily).\n"
+                    "**MDBList API limit reached**\n"
+                    "Wait for the limit to reset or review the account's API allowance before retrying.\n"
                     f"For more information on configuring MdbList, {url_line}\n"
                     f"{len(mdblist_api_limit_errors)} line(s) with MDBLIST API Limit errors. Line number(s): {formatted_errors}"
                 )
@@ -944,17 +902,8 @@ class StandaloneLogScanner:
                 url_line = "[https://kometa.wiki/en/latest/config/files/#example]"
                 formatted_errors = self.format_contiguous_lines(metadata_attribute_errors)
                 metadata_attribute_errors_message = (
-                    f"❌ **METADATA ATTRIBUTE ERRORS**\n"
-                    f"If you are using Kometa nightly48 or newer, this is expected behaviour.\n"
-                    f"`metadata_path` and `overlay_path` are now legacy attributes, and using them will cause the `YAML Error: metadata attribute is required` error.\n"
-                    f"The error can be ignored as it won't cause any issues, or you can update your config.yml to use the new `collection_files`, `overlay_files` and `metadata_files` attributes.\n\n"
-                    f"The steps to take are:\n"
-                    f":one: - Look at every file referred to within your config.yml and see what the first level indentation yaml file attributes are. They should be one of these(`collections:, dynamic_collections:, overlays:, metadata:, playlists:, templates:, external_templates:`) and can contain more than 1. For now, ignore the `templates:` and `external_templates:` attributes.\n"
-                    f":two: - if it's `metadata:`, file it under the `metadata_file:` section of your config.yml\n"
-                    f":three: - if it's `collections:` or `dynamic_collections:`, file it under the `collection_files:` section of your config.yml\n"
-                    f":four: - if it's `playlists:`,  file it under the `playlist_files:` section of your config.yml\n"
-                    f":five: - if it's `overlays:`,  file it under the `overlay_files:` section of your config.yml\n\n"
-                    f"`*NOTE:` If you only see `templates:` or `external_templates:`, this is a special case and you typically would not be referring to it directly in your config.yml file.\n\n"
+                    "**Required metadata attribute is missing**\n"
+                    "Review the referenced file and add the required value using the documented schema.\n"
                     f"Within the attached log file, go to the indicated line(s) for more details on the exact issue and take actions to fix.\n"
                     f"For more information on this, {url_line}\n"
                     f"{len(metadata_attribute_errors)} line(s) with METADATA ATTRIBUTE errors. Line number(s): {formatted_errors}"
@@ -965,9 +914,8 @@ class StandaloneLogScanner:
                 url_line = "[https://kometa.wiki/en/latest/config/overview/?h=configuration]"
                 formatted_errors = self.format_contiguous_lines(metadata_load_errors)
                 metadata_load_errors_message = (
-                    f"❌ **METADATA LOAD ERRORS**\n"
-                    f"Kometa is trying to load a file from your config file.\n"
-                    f"This error indicates that the setting is not correctly setup in config.yml. Usually wrong path to the file, or a badly formatted yml file.\n"
+                    "**Metadata file failed to load**\n"
+                    "Review the error for an invalid path, inaccessible URL, or YAML/schema problem, then correct the file definition.\n"
                     f"Within the attached log file, go to the indicated line(s) for more details on the exact issue and take actions to fix.\n"
                     f"For more information on this, {url_line}\n"
                     f"{len(metadata_load_errors)} line(s) with METADATA LOAD errors. Line number(s): {formatted_errors}"
@@ -978,9 +926,8 @@ class StandaloneLogScanner:
                 url_line = "[https://kometa.wiki/en/latest/config/overview/?h=configuration]"
                 formatted_errors = self.format_contiguous_lines(overlay_load_errors)
                 overlay_load_errors_message = (
-                    "❌ **OVERLAY LOAD ERRORS**\n"
-                    "Kometa is trying to load a file from your config file.\n"
-                    "This error indicates that the setting is not correctly setup in config.yml. Usually wrong path to the file, or a badly formatted yml file.\n"
+                    "**Overlay file failed to load**\n"
+                    "Review the error for an invalid path, inaccessible URL, or YAML/schema problem, then correct the file definition.\n"
                     "Within the attached log file, go to the indicated line(s) for more details on the exact issue and take actions to fix.\n"
                     f"For more information on this, {url_line}\n"
                     f"{len(overlay_load_errors)} line(s) with OVERLAY LOAD errors. Line number(s): {formatted_errors}"
@@ -991,9 +938,8 @@ class StandaloneLogScanner:
                 url_line = "[https://kometa.wiki/en/latest/config/overview/?h=configuration]"
                 formatted_errors = self.format_contiguous_lines(playlist_load_errors)
                 playlist_load_errors_message = (
-                    "❌ **PLAYLIST LOAD ERRORS**\n"
-                    "Kometa is trying to load a file from your config file.\n"
-                    "This error indicates that the setting is not correctly setup in config.yml. Usually wrong path to the file, or a badly formatted yml file.\n"
+                    "**Playlist file failed to load**\n"
+                    "Review the error for an invalid path, inaccessible URL, or YAML/schema problem, then correct the file definition.\n"
                     "Within the attached log file, go to the indicated line(s) for more details on the exact issue and take actions to fix.\n"
                     f"For more information on this, {url_line}\n"
                     f"{len(playlist_load_errors)} line(s) with PLAYLIST LOAD errors. Line number(s): {formatted_errors}"
@@ -1004,8 +950,8 @@ class StandaloneLogScanner:
                 url_line = "[https://kometa.wiki/en/latest/config/libraries/?h=report_path#attributes]"
                 formatted_errors = self.format_contiguous_lines(missing_path_errors)
                 missing_path_errors_message = (
-                    "⚠️ **LEGACY SCHEMA DETECTED**\n"
-                    "`missing_path` or `save_missing` is no longer used and should be replaced/removed. Use `report_path` instead.\n"
+                    "**Legacy missing-item setting detected**\n"
+                    "Replace `missing_path` or `save_missing` with the current missing-item reporting configuration.\n"
                     f"For more information on handling these, {url_line}\n"
                     f"{len(missing_path_errors)} line(s) with `missing_path` or `save_missing` errors. Line number(s): {formatted_errors}"
                 )
@@ -1016,9 +962,8 @@ class StandaloneLogScanner:
                 formatted_errors = self.format_contiguous_lines(new_plexapi_version_found_errors)
                 note = f"**(as of {datetime.now().strftime('%Y-%m-%d %H:%M:%S')})**"
                 new_plexapi_version_found_errors_message = (
-                    "🚀 **PYTHON MODULE UPDATE NEEDED**\n"
-                    # f"PlexAPI: {self.current_plexapi_version}\n\n"
-                    "In the Kometa discord thread, type `!update` for instructions on how to update your requirements.\n"
+                    "**Python dependency update required**\n"
+                    "Update the package identified on the referenced line, then restart Kometa.\n"
                     f"For more information on updating, {url_line}\n"
                     f"{len(new_plexapi_version_found_errors)} line(s) with New Python Module Updates. Line number(s): {formatted_errors}"
                 )
@@ -1029,14 +974,11 @@ class StandaloneLogScanner:
                 formatted_errors = self.format_contiguous_lines(new_version_found_errors)
                 note = f"**(as of {datetime.now().strftime('%Y-%m-%d %H:%M:%S')})**"
                 new_version_found_errors_message = (
-                    "🚀 **VERSION UPDATE AVAILABLE**\n"
-                    f"**Current Version:** {self.current_kometa_version}\n"
-                    f"**Newest Version (at the time of this log):** {self.kometa_newest_version}\n\n"
-                    f"**Latest Kometa Versions** {note}\n"
-                    f"Master branch: {self.version_master}\n"
-                    f"Develop branch: {self.version_develop}\n"
-                    f"Nightly branch: {self.version_nightly}\n\n"
-                    "In the Kometa discord thread, type `!update` for instructions on how to update.\n"
+                    "**Kometa update available**\n"
+                    "Review the release notes and update when convenient to receive current fixes and features.\n"
+                    f"Current version: {self.current_kometa_version}\n"
+                    f"Newest version at the time of this log: {self.kometa_newest_version}\n"
+                    f"Latest versions {note}: master {self.version_master}; develop {self.version_develop}; nightly {self.version_nightly}.\n"
                     f"For more information on updating, {url_line}\n"
                     f"{len(new_version_found_errors)} line(s) with New Version errors. Line number(s): {formatted_errors}"
                 )
@@ -1046,10 +988,8 @@ class StandaloneLogScanner:
                 url_line = "[https://kometa.wiki/en/latest/kometa/logs/?h=%5Berror%5D#error]"
                 formatted_errors = self.format_contiguous_lines(no_items_found_errors)
                 no_items_error_message = (
-                    "⚠️ **NO ITEMS FOUND IN PLEX**\n"
-                    "The criteria defined by a search/filter returned 0 results.\n"
-                    "This is often expected - for example, if you try to apply a 1080P overlay to a 4K library then no items will get the overlay since no items have a 1080P resolution.\n"
-                    "It is worth noting that search and filters are case-sensitive, so `1080P` and `1080p` are treated as two separate things.\n"
+                    "**No matching Plex items found**\n"
+                    "Verify the library, filters, source IDs, and item availability in Plex.\n"
                     f"For more information on this error, {url_line}\n"
                     f"{len(no_items_found_errors)} line(s) with 'No Items found in Plex' errors. Line number(s): {formatted_errors}"
                 )
@@ -1059,10 +999,8 @@ class StandaloneLogScanner:
                 url_line = "[https://kometa.wiki/en/latest/config/omdb/#omdb-attributes]"
                 formatted_errors = self.format_contiguous_lines(omdb_errors)
                 omdb_error_message = (
-                    "❌ **OMDB ERROR**\n"
-                    "Your configuration contains an invalid API key for OMDb.\n"
-                    "This will cause any services that rely on OMDb to fail.\n"
-                    "In the Kometa discord thread, type `!wiki` for more information and search.\n"
+                    "**OMDb API key is invalid**\n"
+                    "Replace the configured key with a valid OMDb API key and retry the run.\n"
                     f"For more information on configuring OMDb, {url_line}\n"
                     f"{len(omdb_errors)} line(s) with OMDb errors. Line number(s): {formatted_errors}"
                 )
@@ -1072,9 +1010,8 @@ class StandaloneLogScanner:
                 url_line = "[https://kometa.wiki/en/latest/config/omdb/?h=omdb#omdb-attributes]"
                 formatted_errors = self.format_contiguous_lines(omdb_api_limit_errors)
                 omdb_api_limit_error_message = (
-                    f"❌ **OMDB API LIMIT ERROR**\n"
-                    f"You have hit the OMDB API LIMIT. The free apikey is limited to 1000 requests per day so if you hit your limit Kometa should be able to pick up where it left off the next day as long as the Kometa cache setting is enabled in yur config.yml file.\n"
-                    f"This will cause any metadata updates that rely on OMDB to fail until the limit is reset (usually daily).\n"
+                    "**OMDb request limit reached**\n"
+                    "Wait for the limit to reset or review the account's API allowance.\n"
                     f"For more information on configuring OMDB, {url_line}\n"
                     f"{len(omdb_api_limit_errors)} line(s) with OMDB API Limit errors. Line number(s): {formatted_errors}"
                 )
@@ -1084,10 +1021,8 @@ class StandaloneLogScanner:
                 url_line = "[https://kometa.wiki/en/latest/showcase/overlays/?h=font#example-2]"
                 formatted_errors = self.format_contiguous_lines(overlay_font_missing)
                 overlay_font_missing_message = (
-                    "❌ **OVERLAY FONT MISSING**\n"
-                    "We detected that you are referencing a font that Kometa cannot find.\n"
-                    "This can lead to overlays not being applied when a font is required.\n"
-                    f"In the Kometa discord thread, type `!wiki` for more information or follow this link: {url_line}\n"
+                    "**Overlay font file is missing**\n"
+                    "Verify the configured path, filename, letter case, and container accessibility.\n"
                     f"{len(overlay_font_missing)} line(s) with `Overlay Error: font:` errors. Line number(s): {formatted_errors}"
                 )
                 special_check_lines.append(overlay_font_missing_message)
@@ -1096,12 +1031,8 @@ class StandaloneLogScanner:
                 url_line = "[https://kometa.wiki/en/latest/kometa/scripts/imagemaid]"
                 formatted_errors = self.format_contiguous_lines(overlays_bloat)
                 overlays_bloat_message = (
-                    "⚠️ **REAPPLY / RESET OVERLAYS**\n\n"
-                    "We detected that you are using either reapply_overlays OR reset_overlays within your config.\n\n"
-                    "**You should NOT be using reapply_overlays unless you have a specific reason to. If you are not sure do NOT enable it.**\n\n"
-                    "This can lead to your system creating additional posters within Plex causing bloat\n\n"
-                    "Typically these config lines are only used for very specific cases so if this is your case, then you can ignore this recommendation\n\n"
-                    f"In the Kometa discord thread, type `!bloat` for more information or follow this link: {url_line}\n\n"
+                    "**Overlay reapplication or reset detected**\n"
+                    "This can significantly increase processing time and storage activity. Use it only when a full rebuild is required.\n"
                     f"{len(overlays_bloat)} line(s) with reapply_overlays or reset_overlays. Line number(s): {formatted_errors}"
                 )
                 special_check_lines.append(overlays_bloat_message)
@@ -1111,14 +1042,8 @@ class StandaloneLogScanner:
                 url_line2 = "[https://kometa.wiki/en/latest/kometa/guides/assets]"
                 formatted_errors = self.format_contiguous_lines(overlay_apply_errors)
                 overlay_apply_errors_message = (
-                    "⚠️ **OVERLAY APPLY ERROR**\n"
-                    "Kometa attempts to apply an overlay to things, but finds that the art on the item is already an overlaid poster from Kometa with an EXIF tag:\n"
-                    "```Abraham Season 1\n  Overlay Error: Poster already has an Overlay\nArchie Bunker''s Place S03E14\n  Overlay Error: Poster already has an Overlay\nAs Time Goes By Season 10\n  Overlay Error: Poster already has an Overlay\nCHiPs Season 3\n  Overlay Error: Poster already has an Overlay```\n\n"
-                    "For `Season` posters, this is often because Plex has assigned higher-level art [like the show poster to a season that has no art of its own].\n"
-                    "For `Movies`, `Show`, and `Episode` posters, this is often because an art item was selected or part of the assets pipeline that already had an overlay image on it.\n\n"
-                    "You can fix this by going to each item in Plex, hitting the pencil icon, selecting Poster, and choosing art that does not have an overlay.\n"
-                    "Alternatively if you are using the asset pipeline in Kometa, updating your asset pipeline with the art that does not have an overlay.\n"
-                    "In the Kometa discord thread, type `!overlaylabel` for more information.\n\n"
+                    "**Poster already contains an overlay**\n"
+                    "Restore the original artwork or use the documented overlay reset process before reapplying overlays.\n"
                     f"For more information on overlays, {url_line}\n"
                     f"For more information on the asset pipeline, {url_line2}\n"
                     f"{len(overlay_apply_errors)} line(s) with OVERLAY APPLY errors. Line number(s): {formatted_errors}"
@@ -1129,9 +1054,8 @@ class StandaloneLogScanner:
                 url_line = "[https://kometa.wiki/en/latest/defaults/overlays]"
                 formatted_errors = self.format_contiguous_lines(overlay_image_missing)
                 overlay_image_missing_message = (
-                    "❌ **OVERLAY IMAGE MISSING ERROR**\n"
-                    "Kometa attempts to apply an overlay to things, but finds that the overlay itself is not found and thus cannot be applied to the art.\n"
-                    "Validate the path and also ensure that the case of the file(i.e. `4K.png` is NOT the same as `4k.png`) is the same as found in the line within the log.\n"
+                    "**Overlay image file is missing**\n"
+                    "Verify the configured path, filename, letter case, and container accessibility.\n"
                     f"For more information on overlays, {url_line}\n"
                     f"{len(overlay_image_missing)} line(s) with OVERLAY IMAGE MISSING errors. Line number(s): {formatted_errors}"
                 )
@@ -1141,8 +1065,8 @@ class StandaloneLogScanner:
                 url_line = "[https://kometa.wiki/en/latest/files/settings/?h=builder_level]"
                 formatted_errors = self.format_contiguous_lines(overlay_level_errors)
                 overlay_level_errors_message = (
-                    "⚠️ **LEGACY SCHEMA DETECTED**\n"
-                    "`overlay_level:` is no longer used and should be replaced by `builder_level:`.\n"
+                    "**Legacy `overlay_level` setting detected**\n"
+                    "Replace `overlay_level` with `builder_level` using the current overlay schema.\n"
                     f"For more information on handling these, {url_line}\n"
                     f"{len(overlay_level_errors)} line(s) with `overlay_level` errors. Line number(s): {formatted_errors}"
                 )
@@ -1152,10 +1076,8 @@ class StandaloneLogScanner:
                 url_line = "[https://kometa.wiki/en/latest/defaults/playlist/?h=playlist]"
                 formatted_errors = self.format_contiguous_lines(playlist_errors)
                 playlist_error_message = (
-                    "❌ **PLAYLIST ERROR**\n"
-                    "A playlist is trying to use a library that does not exist in Plex.\n"
-                    "Ensure that all libraries being defined actually exist.\n"
-                    "The Kometa Defaults `playlist` file expects libraries called `Movies` and `TV Shows`, template variables can be used to change this.\n"
+                    "**Playlist references an unknown Plex library**\n"
+                    "Correct the library name or provide the appropriate template variable for your environment.\n"
                     f"For more information: {url_line}\n"
                     f"{len(playlist_errors)} line(s) with playlist errors. Line number(s): {formatted_errors}"
                 )
@@ -1190,10 +1112,8 @@ class StandaloneLogScanner:
                 url_line = "[https://kometa.wiki/en/latest/kometa/logs/?h=%5Berror%5D#error]"
                 formatted_errors = self.format_contiguous_lines(plex_regex_errors)
                 plex_regex_error_message = (
-                    "⚠️ **PLEX REGEX ERROR**\n"
-                    "Kometa is trying to perform a regex search, and 0 items match the regex pattern.\n"
-                    "This is often an expected error and can be ignored in most cases.\n"
-                    "If you need assistance with this error, raise a support thread in `#kometa-help`.\n"
+                    "**Plex regular expression matched no items**\n"
+                    "Confirm that the pattern and target field are correct; no action is needed if an empty result is expected.\n"
                     f"For more information on handling regex issues, {url_line}\n"
                     f"{len(plex_regex_errors)} line(s) with Plex regex errors. Line number(s): {formatted_errors}"
                 )
@@ -1203,10 +1123,8 @@ class StandaloneLogScanner:
                 url_line = "[https://kometa.wiki/en/latest/config/settings/?h=show_options#show-options]"
                 formatted_errors = self.format_contiguous_lines(plex_lib_errors)
                 plex_lib_error_message = (
-                    "❌ **PLEX LIBRARY ERROR**\n"
-                    "Your configuration contains an invalid Plex Library Name.\n"
-                    "Kometa will not be able to update a library that does not exist.\n"
-                    "Check for spelling `case sensitive` and ensure that you have `show_options: true` within your settings within config.yml\n"
+                    "**Plex library was not found**\n"
+                    "Verify spelling and letter case, and enable `show_options: true` to review available names.\n"
                     f"For more information on configuring the show_options, {url_line}\n"
                     f"{len(plex_lib_errors)} line(s) with PLEX LIBRARY errors. Line number(s): {formatted_errors}"
                 )
@@ -1216,10 +1134,8 @@ class StandaloneLogScanner:
                 url_line = "[https://kometa.wiki/en/latest/kometa/install/wt/wt-01-basic-config/#getting-a-plex-url-and-token]"
                 formatted_errors = self.format_contiguous_lines(plex_url_errors)
                 plex_url_error_message = (
-                    "❌ **PLEX URL ERROR**\n"
-                    "Your configuration contains an invalid Plex URL.\n"
-                    "This will cause any services that rely on this URL to fail.\n"
-                    "In the Kometa discord thread, type `!wiki` for more information and search.\n"
+                    "**Plex URL is invalid**\n"
+                    "Verify the scheme, hostname, port, and container networking, then test connectivity.\n"
                     f"For more information on configuring the Plex URL, {url_line}\n"
                     f"{len(plex_url_errors)} line(s) with PLEX URL errors. Line number(s): {formatted_errors}"
                 )
@@ -1230,8 +1146,8 @@ class StandaloneLogScanner:
 
                 # Construct the message with server names and versions
                 rounding_errors_message = (
-                    "⚠️ **USER RATINGS ROUNDING ISSUE**\n"
-                    "We have detected that you are running `mass_user_rating_update` or `mass_episode_user_ratings_update` with Plex versions that will cause rounding issues with user ratings. To avoid this, downgrade your Plex Media server to `1.40.0.7998` or upgrade it to `1.40.3.8555` or later.\n"
+                    "**Plex user-rating rounding issue detected**\n"
+                    "The detected Plex version may round ratings written through the API during mass updates. Upgrade to `1.40.3.8555` or later before applying these operations.\n"
                     f"For more information on this issue, {url_line}\n"
                     f"Detected issues on the following servers:\n"
                 )
@@ -1245,10 +1161,8 @@ class StandaloneLogScanner:
                 url_line = "[https://kometa.wiki/en/latest/kometa/yaml/]"
                 formatted_errors = self.format_contiguous_lines(ruamel_errors)
                 ruamel_error_message = (
-                    "💥 **YAML ERROR**\n"
-                    "YAML is very sensitive with regards to spaces and indentation.\n"
-                    "Search for `ruamel.yaml.` in your log file to get hints as to where the problem lies.\n"
-                    "In the Kometa discord thread, type `!yaml` and `!editors` for more information.\n"
+                    "**YAML parsing failed**\n"
+                    "Review the `ruamel.yaml` error near the referenced lines and correct indentation, spacing, quoting, or structure.\n"
                     f"For more information on handling YAML issues, {url_line}\n"
                     f"{len(ruamel_errors)} line(s) with YAML errors. Line number(s): {formatted_errors}"
                 )
@@ -1258,8 +1172,8 @@ class StandaloneLogScanner:
                 url_line = "[https://kometa.wiki/en/latest/config/settings/?h=run_order#run-order]"
                 formatted_errors = self.format_contiguous_lines(run_order_errors)
                 run_order_error_message = (
-                    "⚠️ **RUN_ORDER WARNING**\n"
-                    f"Typically, and in almost EVERY situation, you want ` - operations` to precede both metadata and overlays processing. To fix this, place `- operations` first in the `run_order` section of the config.yml file\n"
+                    "**Recommended run order is not configured**\n"
+                    "Move `- operations` before metadata and overlays unless your workflow specifically requires another order.\n"
                     f"For more information on this, {url_line}\n"
                     f"{len(run_order_errors)} line(s) with RUN_ORDER warnings. Line number(s): {formatted_errors}"
                 )
@@ -1279,12 +1193,9 @@ class StandaloneLogScanner:
                 url_line = "[https://forums.plex.tv/t/plex-media-server-security-update/928341]"
 
                 msg = (
-                    "🚀 **PMS SECURITY ALERT**\n"
-                    "A Plex Media Server version in a **known vulnerable range** was detected.\n"
+                    "**Vulnerable Plex Media Server version detected**\n"
+                    "A server is running a Plex release within the identified vulnerable range. Upgrade Plex Media Server to a secure release immediately and verify the version after restart.\n"
                     f"**Affected range:** `{vuln_low_str}` **through** `{vuln_high_str}`\n"
-                    "Please **upgrade Plex Media Server** to a safe release as soon as possible.\n"
-                    "Until then, Plex will block access from others reaching your server.\n"
-                    "UPGRADE IMMEDIATELY!\n"
                     f"For more information on this see url: {url_line}\n"
                     f"{len(security_vuln_hits)} line(s) with these errors."
                     "Detected on:\n"
@@ -1298,10 +1209,8 @@ class StandaloneLogScanner:
                 url_line = "[https://kometa.wiki/en/latest/config/tautulli]"
                 formatted_errors = self.format_contiguous_lines(traceback_errors)
                 traceback_errors_message = (
-                    "💥 **TRACEBACK ERROR**\n"
-                    "Your KOMETA run contains traceback errors.\n"
-                    "This likely means that the run ended prematurely or did not complete certain tasks (i.e. overlays ended early or did not apply).\n"
-                    "In the Kometa discord thread, type `!wiki` for more information and search.\n"
+                    "**Unhandled Kometa exception detected**\n"
+                    "Review the first exception and its preceding context, resolve the cause, and retry.\n"
                     f"{len(traceback_errors)} line(s) with Traceback errors. Line number(s): {formatted_errors}"
                 )
                 special_check_lines.append(traceback_errors_message)
@@ -1310,10 +1219,8 @@ class StandaloneLogScanner:
                 url_line = "[https://kometa.wiki/en/latest/config/tautulli]"
                 formatted_errors = self.format_contiguous_lines(tautulli_apikey_errors)
                 tautulli_apikey_errors_message = (
-                    "❌ **TAUTULLI API ERROR**\n"
-                    "Your configuration contains an invalid API key for Tautulli.\n"
-                    "This will cause any services that rely on Tautulli to fail.\n"
-                    "In the Kometa discord thread, type `!wiki` for more information and search.\n"
+                    "**Tautulli API key is invalid**\n"
+                    "Replace the configured key with a valid Tautulli API key and retry the run.\n"
                     f"For more information on configuring Tautulli, {url_line}\n"
                     f"{len(tautulli_apikey_errors)} line(s) with Tautulli errors. Line number(s): {formatted_errors}"
                 )
@@ -1323,10 +1230,8 @@ class StandaloneLogScanner:
                 url_line = "[https://kometa.wiki/en/latest/config/tautulli#tautulli-attributes]"
                 formatted_errors = self.format_contiguous_lines(tautulli_url_errors)
                 tautulli_url_error_message = (
-                    "❌ **TAUTULLI URL ERROR**\n"
-                    "Your configuration contains an invalid Tautulli URL.\n"
-                    "This will cause any services that rely on this URL to fail.\n"
-                    "In the Kometa discord thread, type `!wiki` for more information and search.\n"
+                    "**Tautulli URL is invalid**\n"
+                    "Verify the scheme, hostname, port, and container networking, then test connectivity.\n"
                     f"For more information on configuring the Tautulli URL, {url_line}\n"
                     f"{len(tautulli_url_errors)} line(s) with TAUTULLI URL errors. Line number(s): {formatted_errors}"
                 )
@@ -1336,10 +1241,8 @@ class StandaloneLogScanner:
                 url_line = "[https://kometa.wiki/en/latest/kometa/install/wt/wt-01-basic-config/#getting-a-tmdb-api-key]"
                 formatted_errors = self.format_contiguous_lines(tmdb_api_errors)
                 tmdb_api_errors_message = (
-                    "❌ **TMDB API ERROR**\n"
-                    "Your configuration contains an invalid API key for TMDb.\n"
-                    "This will cause any services that rely on TMDb to fail.\n"
-                    "In the Kometa discord thread, type `!wiki` for more information and search.\n"
+                    "**TMDb API key is invalid**\n"
+                    "Replace the configured key with a valid TMDb API key and retry the run.\n"
                     f"For more information on configuring TMDb, {url_line}\n"
                     f"{len(tmdb_api_errors)} line(s) with TMDb errors. Line number(s): {formatted_errors}"
                 )
@@ -1349,14 +1252,9 @@ class StandaloneLogScanner:
                 url_line = "[https://kometa.wiki/en/latest/kometa/install/overview/]"
                 formatted_errors = self.format_contiguous_lines(timeout_errors)
                 timeout_error_message = (
-                    "❌⏱️ **TIMEOUT ERROR**\n"
-                    "There were timeout issues while trying to connect to different services.\n"
-                    "Ensure that your network configuration allows Kometa to make internet calls.\n"
-                    f"Typically this is your Plex server timing out when Kometa tries to connect to it. There's nothing Kometa can do about this directly. Currently your timeout for plex is set to: `{self.plex_timeout}` seconds. You can try increasing the connection timeout in `config.yml`:\n"
-                    "```plex:\n  url: http://bing.bang.boing\n  token: REDACTED\n  timeout: 360   <<< right here```\n"
-                    "But that's not a guarantee.\n\nEffectively what's happening here is that you're ringing the doorbell and no one's answering. You can't do anything about that aside from waiting longer. You can't ring the doorbell differently.\n\n"
-                    "This seems to happen most often in an Appbox context, so perhaps contact your appbox provider to discuss it.\n\n"
-                    "In the Kometa discord thread, type `!timeout` for more information.\n"
+                    "**Service connection timed out**\n"
+                    "Confirm that the affected service is reachable. If it is healthy but slow, increase the relevant timeout in `config.yml` and retry.\n"
+                    f"Configured Plex timeout: `{self.plex_timeout}` seconds.\n"
                     f"For more information on network configuration, {url_line}\n"
                     f"{len(timeout_errors)} line(s) with timeout errors. Line number(s): {formatted_errors}"
                 )
@@ -1366,9 +1264,8 @@ class StandaloneLogScanner:
                 url_line = "[https://kometa.wiki/en/latest/kometa/install/wt/wt-01-basic-config/]"
                 formatted_errors = self.format_contiguous_lines(tmdb_fail_errors)
                 tmdb_fail_error_message = (
-                    "❌ **TMDB ERROR**\n"
-                    "This error appears when your host machine is unable to connect to TMDb.\n"
-                    "Ensure that your networking (particularly docker container) is configured to allow Kometa to make internet calls.\n"
+                    "**TMDb connection failed**\n"
+                    "Verify DNS, outbound internet access, firewall rules, and container networking.\n"
                     f"For more information on network configuration, {url_line}\n"
                     f"{len(tmdb_fail_errors)} line(s) with TMDB errors. Line number location. Line number(s): {formatted_errors}"
                 )
@@ -1378,10 +1275,8 @@ class StandaloneLogScanner:
                 url_line = "[https://kometa.wiki/en/latest/kometa/logs/?h=%5Berror%5D#error]"
                 formatted_errors = self.format_contiguous_lines(to_be_configured_errors)
                 to_be_configured_errors_message = (
-                    "❌ **TO BE CONFIGURED ERROR**\n"
-                    "You are using a builder that has not been configured yet.\n"
-                    "This will affect any functionality that relies on these connections. Review all lines below and resolve.\n"
-                    "In the Kometa discord thread, type `!wiki` and search for more information\n"
+                    "**Required service is not configured**\n"
+                    "Identify the service on the referenced lines and add its required settings before retrying.\n"
                     f"For more information on configuring services, {url_line}\n"
                     f"{len(to_be_configured_errors)} line(s) with `to be configured` errors. Line number(s): {formatted_errors}"
                 )
@@ -1391,10 +1286,8 @@ class StandaloneLogScanner:
                 url_line = "[https://kometa.wiki/en/latest/config/trakt/#trakt-attributes]"
                 formatted_errors = self.format_contiguous_lines(trakt_connection_errors)
                 trakt_connection_error_message = (
-                    "❌ **TRAKT CONNECTION ERROR**\n"
-                    "There was an issue connecting to the Trakt service.\n"
-                    "This will affect any functionality that relies on Trakt data.\n"
-                    "In the Kometa discord thread, type `!trakt` for more information\n"
+                    "**Trakt connection failed**\n"
+                    "Verify authorization, credentials, network access, and service availability before retrying.\n"
                     f"For more information on configuring the Trakt service, {url_line}\n"
                     f"{len(trakt_connection_errors)} line(s) with TRAKT CONNECTION errors. Line number(s): {formatted_errors}"
                 )
@@ -1418,36 +1311,8 @@ class StandaloneLogScanner:
             return recommendation_messages
 
     def reorder_recommendations(self, recommendations):
-            # Define the priority order of symbols
-            priority_order = {'🚀': 1, '💥': 2, '❌': 3, '⚠': 4, '💬': 5}
-
-            def sort_key(recommendation):
-                # Get the first symbol in the message
-                first_symbol = recommendation.get('first_line', 'No first line available')[0]
-
-                # Remove variation selector if present
-                first_symbol = first_symbol.rstrip('\uFE0F')
-
-                # Check if the first symbol is in the priority_order dictionary
-                if first_symbol in priority_order:
-                    priority = priority_order[first_symbol]
-                    # mylogger.info(f"Original Message: {recommendation.get('first_line', 'No first line available')}")
-                    # mylogger.info(f"First Symbol: {first_symbol}")
-                    # mylogger.info(f"Priority: {priority}")
-                    return priority
-                else:
-                    # mylogger.info(f"Priority not found for symbol {first_symbol}, using default priority")
-                    return float('inf')
-
-            # Sort recommendations based on the custom key
-            sorted_recommendations = sorted(recommendations, key=sort_key)
-
-            # Print or log the sorted recommendations for debugging
-            # mylogger.info("Sorted Recommendations:")
-            for rec in sorted_recommendations:
-                mylogger.info(rec.get('first_line', 'No first line available'))
-
-            return sorted_recommendations
+            # Severity ordering is applied after normalization in scanner.py.
+            return recommendations
 
     def extract_header_lines(self, content):
             start_marker_current = "Version: "

@@ -33,10 +33,41 @@ def _plain_title(value: str) -> str:
     return value or "Recommendation"
 
 
+def _strip_emojis(value: str) -> str:
+    """Remove emoji glyphs and selectors while preserving ordinary punctuation."""
+    value = re.sub(
+        "["
+        "\U0001F1E6-\U0001F1FF"
+        "\U0001F300-\U0001FAFF"
+        "\u2300-\u23FF"
+        "\u2600-\u27BF"
+        "]+",
+        "",
+        value or "",
+    )
+    return value.replace("\uFE0F", "").replace("\u200D", "")
+
+
 def _severity(first_line: str) -> str:
     if first_line.startswith(("🚀", "💥", "❌")):
         return "critical"
     if first_line.startswith("⚠"):
+        return "warning"
+    title = _plain_title(first_line).lower()
+    if any(term in title for term in (
+        "failed", "invalid", "error", "vulnerable", "exceeds available",
+        "required api key", "required service", "unhandled", "incomplete",
+        "unreadable", "subscription", "prerequisite", "api limit",
+        "request limit", "could not be parsed", "already contains",
+        "image file is missing", "font file is missing", "unknown plex library",
+        "plex library was not found", "connection timed out",
+    )):
+        return "critical"
+    if any(term in title for term in (
+        "warning", "legacy", "detected", "matched no items", "no matching",
+        "low memory", "memory below", "insufficient memory", "run order",
+        "maintenance", "run exceeds", "rounding issue",
+    )):
         return "warning"
     return "advice"
 
@@ -70,12 +101,15 @@ def scan_log(filename: str, content_bytes: bytes) -> ScanResult:
     recommendations = scanner.reorder_recommendations(recommendations)
     normalized = [
         {
-            "title": _plain_title(item.get("first_line", "")),
-            "message": item.get("message", ""),
+            "title": _plain_title(
+                _strip_emojis(item.get("message", "").splitlines()[0] if item.get("message") else "")
+            ),
+            "message": _strip_emojis(item.get("message", "")).lstrip(),
             "severity": _severity(item.get("first_line", "")),
         }
         for item in recommendations
     ]
+    normalized.sort(key=lambda item: {"critical": 0, "warning": 1, "advice": 2}[item["severity"]])
 
     metadata = {
         "kometa_version": scanner.current_kometa_version,
