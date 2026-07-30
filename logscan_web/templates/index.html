@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Scan a Kometa log and review practical recommendations.">
+  <title>Kometa Log Scanner</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+  <script src="{{ url_for('static', filename='app.js') }}" defer></script>
+</head>
+<body>
+  <div class="ambient ambient-one"></div>
+  <div class="ambient ambient-two"></div>
+  <header class="site-header">
+    <a class="brand" href="/" aria-label="Kometa Utilities home">
+      <span class="brand-mark">K</span>
+      <span>Kometa Utilities</span>
+    </a>
+    <span class="utility-label">Log Scanner</span>
+  </header>
+
+  <main class="shell">
+    <section class="hero">
+      <p class="eyebrow">Kometa diagnostics</p>
+      <h1>Turn your log into a clear action plan.</h1>
+      <p class="hero-copy">Upload a Kometa log to identify configuration issues, common errors, and practical recommendations. Your file is processed for this scan and is not stored.</p>
+    </section>
+
+    <section class="upload-card" id="upload-section">
+      <form id="upload-form">
+        <label class="drop-zone" id="drop-zone" for="log-file">
+          <input id="log-file" name="log" type="file" accept=".log,.txt,.yml,.yaml,.1,.2,.3,.4,.5,.6,.7,.8,.9" required>
+          <span class="upload-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24"><path d="M12 16V4m0 0L7.5 8.5M12 4l4.5 4.5M5 14v4a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-4"/></svg>
+          </span>
+          <span class="drop-title">Drop your Kometa log here</span>
+          <span class="drop-copy">or choose a file from your device</span>
+          <span class="file-pill" id="file-pill">LOG, TXT or YML · up to 100 MB</span>
+        </label>
+        <div class="form-footer">
+          <p id="form-status" role="status">Ready to scan</p>
+          <button class="primary-button" id="scan-button" type="submit" disabled>
+            <span>Scan log</span>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg>
+          </button>
+        </div>
+      </form>
+    </section>
+
+    <section class="results" id="results" hidden>
+      <div class="results-heading">
+        <div>
+          <p class="eyebrow">Scan complete</p>
+          <h2 id="results-title">Recommendations</h2>
+        </div>
+        <div class="results-actions">
+          <button class="secondary-button" id="view-log" type="button">View log</button>
+          <button class="secondary-button" id="new-scan" type="button">Scan another file</button>
+        </div>
+      </div>
+
+      <div class="summary-grid" id="summary-grid"></div>
+
+      <div class="result-layout">
+        <nav class="section-nav" aria-label="Result sections" id="section-nav"></nav>
+        <div class="section-content" id="section-content"></div>
+      </div>
+    </section>
+  </main>
+
+  <dialog class="log-viewer" id="log-viewer">
+    <div class="viewer-shell">
+      <header class="viewer-header">
+        <div>
+          <p class="eyebrow">Log viewer</p>
+          <h2 id="viewer-filename">Uploaded log</h2>
+        </div>
+        <button class="icon-button" id="close-viewer" type="button" aria-label="Close log viewer">×</button>
+      </header>
+      <div class="viewer-toolbar">
+        <div class="viewer-controls">
+          <form id="line-jump-form">
+            <label for="line-jump">Go to line</label>
+            <input id="line-jump" type="number" min="1" value="1" inputmode="numeric">
+            <button class="primary-button compact" type="submit">Go</button>
+          </form>
+          <div class="section-jump-control">
+            <label for="section-jump">Jump to section</label>
+            <select id="section-jump">
+              <option value="">Select a section</option>
+            </select>
+          </div>
+        </div>
+        <p id="viewer-position">Lines 1–1</p>
+      </div>
+      <div class="log-code" id="log-code" tabindex="0" aria-label="Log contents"></div>
+    </div>
+  </dialog>
+
+  <footer>
+    <span>Kometa Utilities</span>
+    <span>Log files are processed in memory and are not retained.</span>
+  </footer>
+</body>
+</html>
