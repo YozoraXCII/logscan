@@ -1,8 +1,12 @@
 import unittest
+from datetime import UTC, datetime, timedelta
 from io import BytesIO
+import json
+import tempfile
 
 from logscan_web.app import app
 from logscan_web.scanner import ScanError, _plain_title, scan_log
+from logscan_web.storage import ScanStore
 
 
 VALID_LOG = b"\n".join(
@@ -32,6 +36,18 @@ class ScannerTests(unittest.TestCase):
     def test_title_cleanup_removes_markdown_and_trailing_bracket(self):
         self.assertEqual(_plain_title("⚠️ **WARNING]**"), "WARNING")
 
+    def test_expired_scans_are_deleted(self):
+        with tempfile.TemporaryDirectory() as root:
+            store = ScanStore(root)
+            result = scan_log("sample.log", VALID_LOG)
+            scan_id, _token = store.create("sample.log", VALID_LOG, result)
+            record_path = store.root / scan_id / "result.json"
+            record = json.loads(record_path.read_text(encoding="utf-8"))
+            record["created_at"] = (datetime.now(UTC) - timedelta(hours=49)).isoformat()
+            record_path.write_text(json.dumps(record), encoding="utf-8")
+            self.assertEqual(store.delete_expired(48 * 60 * 60), 1)
+            self.assertIsNone(store.get(scan_id))
+
 
 class ApiTests(unittest.TestCase):
     def setUp(self):
@@ -51,6 +67,25 @@ class ApiTests(unittest.TestCase):
         )
         self.assertEqual(response.status_code, 200)
         self.assertIn("recommendations", response.get_json())
+
+    def test_scan_is_persisted_and_can_be_deleted_with_token(self):
+        response = self.client.post(
+            "/api/scan",
+            data={"log": (BytesIO(VALID_LOG), "sample.log")},
+            content_type="multipart/form-data",
+        )
+        payload = response.get_json()
+        self.assertEqual(self.client.get(f"/scan/{payload['id']}").status_code, 200)
+        log_response = self.client.get(f"/api/scans/{payload['id']}/log")
+        self.assertEqual(log_response.data, VALID_LOG)
+        log_response.close()
+        self.assertEqual(self.client.delete(f"/api/scans/{payload['id']}").status_code, 403)
+        deleted = self.client.delete(
+            f"/api/scans/{payload['id']}",
+            headers={"X-Delete-Token": payload["delete_token"]},
+        )
+        self.assertEqual(deleted.status_code, 204)
+        self.assertEqual(self.client.get(f"/scan/{payload['id']}").status_code, 404)
 
 
 if __name__ == "__main__":

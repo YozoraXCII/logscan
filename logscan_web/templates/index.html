@@ -9,6 +9,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+  <script id="initial-scan" type="application/json">{{ initial_scan|tojson }}</script>
   <script src="{{ url_for('static', filename='app.js') }}" defer></script>
 </head>
 <body>
@@ -26,7 +27,7 @@
     <section class="hero">
       <p class="eyebrow">Kometa diagnostics</p>
       <h1>Turn your log into a clear action plan.</h1>
-      <p class="hero-copy">Upload a Kometa log to identify configuration issues, common errors, and practical recommendations. Your file is processed for this scan and is not stored.</p>
+      <p class="hero-copy">Upload a Kometa log to identify configuration issues, common errors, and practical recommendations. Logs and scan results are automatically deleted after 48 hours. Keep the private deletion link if you want to remove yours sooner.</p>
     </section>
 
     <section class="upload-card" id="upload-section">
@@ -58,6 +59,7 @@
         </div>
         <div class="results-actions">
           <button class="secondary-button" id="view-log" type="button">View log</button>
+          <button class="danger-button" id="delete-scan" type="button" hidden>Delete log</button>
           <button class="secondary-button" id="new-scan" type="button">Scan another file</button>
         </div>
       </div>
@@ -102,7 +104,7 @@
 
   <footer>
     <span>Kometa Utilities</span>
-    <span>Log files are processed in memory and are not retained.</span>
+    <span>Logs and results are automatically deleted after 48 hours.</span>
   </footer>
 </body>
 </html>

@@ -101,7 +101,7 @@ h1 { margin: 0; max-width: 740px; font-size: clamp(2.5rem, 6vw, 4.35rem); line-h
 
 .form-footer { min-height: 76px; padding: 12px 10px 2px 16px; display: flex; align-items: center; justify-content: space-between; gap: 20px; }
 .form-footer p { margin: 0; color: var(--muted); font-size: .84rem; }
-.primary-button, .secondary-button {
+.primary-button, .secondary-button, .danger-button {
   border: 0;
   border-radius: 9px;
   font-weight: 650;
@@ -118,6 +118,8 @@ h1 { margin: 0; max-width: 740px; font-size: clamp(2.5rem, 6vw, 4.35rem); line-h
 h2 { margin: 0; font-size: clamp(2rem, 4vw, 3rem); letter-spacing: -.04em; }
 .secondary-button { padding: 11px 15px; border: 1px solid var(--border); background: var(--surface-strong); color: #dce1f5; }
 .secondary-button:hover { border-color: rgba(160,174,221,.35); }
+.danger-button { padding: 11px 15px; border: 1px solid rgba(251,113,133,.35); background: rgba(251,113,133,.1); color: #fecdd3; }
+.danger-button:hover { background: rgba(251,113,133,.18); }
 
 .summary-grid { display: grid; grid-template-columns: 1.4fr repeat(3, 1fr); gap: 12px; margin: 30px 0; }
 .summary-card { min-height: 112px; padding: 20px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); }

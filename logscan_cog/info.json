@@ -1,0 +1,9 @@
+{
+  "author": ["Kometa Team"],
+  "description": "Offers to scan Kometa log attachments and returns private result/deletion URLs.",
+  "install_msg": "Configure with `[p]logscanset url https://logscan.kometa.team` and `[p]logscanset apikey <key>`.",
+  "short": "Scan attached Kometa logs.",
+  "requirements": ["aiohttp>=3.9"],
+  "tags": ["kometa", "logs", "diagnostics"],
+  "type": "COG"
+}

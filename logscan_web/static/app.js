@@ -14,6 +14,8 @@ const lineJump = document.querySelector("#line-jump");
 const sectionJump = document.querySelector("#section-jump");
 const viewerPosition = document.querySelector("#viewer-position");
 let currentFile = null;
+let currentScanId = null;
+let deleteToken = null;
 let currentLogLines = null;
 let currentLogSections = [];
 let highlightedRange = { start: 1, end: 1 };
@@ -133,9 +135,13 @@ function recommendationBody(message) {
 }
 
 async function loadLogLines() {
-  if (!currentFile) throw new Error("Select and scan a log before opening the viewer.");
+  if (!currentFile && !currentScanId) throw new Error("Select and scan a log before opening the viewer.");
   if (!currentLogLines) {
-    const text = await currentFile.text();
+    const response = currentFile
+      ? null
+      : await fetch(`/api/scans/${encodeURIComponent(currentScanId)}/log`);
+    if (response && !response.ok) throw new Error("The stored log could not be loaded.");
+    const text = currentFile ? await currentFile.text() : await response.text();
     currentLogLines = text.split(/\r?\n/);
     currentLogSections = findLogSections(currentLogLines);
     populateSectionJump();
@@ -247,7 +253,8 @@ function loadAdjacentLogChunk(direction) {
 async function openLogViewer(targetStart = 1, targetEnd = targetStart) {
   try {
     await loadLogLines();
-    document.querySelector("#viewer-filename").textContent = currentFile.name;
+    document.querySelector("#viewer-filename").textContent =
+      currentFile?.name || document.querySelector("#results-title").textContent;
     if (!logViewer.open) logViewer.showModal();
     renderLogWindow(targetStart, targetEnd);
   } catch (error) {
@@ -340,6 +347,8 @@ function renderResults(data) {
   });
   showGroup(groups.find((group) => metadata.counts[group.key] > 0) || groups[0], recommendations);
   results.hidden = false;
+  currentScanId = data.id || currentScanId;
+  document.querySelector("#delete-scan").hidden = !deleteToken;
   results.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
@@ -372,6 +381,9 @@ form.addEventListener("submit", async (event) => {
     const data = await response.json();
     if (!response.ok) throw new Error(data.error || "The scan could not be completed.");
     status.textContent = "Scan complete";
+    currentScanId = data.id;
+    deleteToken = data.delete_token;
+    history.replaceState({}, "", `/scan/${encodeURIComponent(data.id)}#delete=${encodeURIComponent(deleteToken)}`);
     renderResults(data);
   } catch (error) {
     status.textContent = error.message;
@@ -390,6 +402,18 @@ document.querySelector("#new-scan").addEventListener("click", () => {
 });
 
 document.querySelector("#view-log").addEventListener("click", () => openLogViewer(1));
+document.querySelector("#delete-scan").addEventListener("click", async () => {
+  if (!currentScanId || !deleteToken || !confirm("Permanently delete this log and its scan results?")) return;
+  const response = await fetch(`/api/scans/${encodeURIComponent(currentScanId)}`, {
+    method: "DELETE",
+    headers: { "X-Delete-Token": deleteToken },
+  });
+  if (!response.ok) {
+    alert("The log could not be deleted. The deletion link may be invalid.");
+    return;
+  }
+  location.href = "/";
+});
 document.querySelector("#close-viewer").addEventListener("click", () => logViewer.close());
 document.querySelector("#line-jump-form").addEventListener("submit", (event) => {
   event.preventDefault();
@@ -410,3 +434,11 @@ logCode.addEventListener("scroll", () => {
     loadAdjacentLogChunk("previous");
   }
 });
+
+const initialScan = JSON.parse(document.querySelector("#initial-scan").textContent);
+if (initialScan) {
+  currentScanId = initialScan.id;
+  const fragment = new URLSearchParams(location.hash.slice(1));
+  deleteToken = fragment.get("delete");
+  renderResults(initialScan);
+}
