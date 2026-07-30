@@ -3,6 +3,7 @@ from datetime import UTC, datetime, timedelta
 from io import BytesIO
 import json
 import tempfile
+import time
 
 from logscan_web.app import app
 from logscan_web.scanner import ScanError, _plain_title, scan_log
@@ -75,6 +76,8 @@ class ApiTests(unittest.TestCase):
             content_type="multipart/form-data",
         )
         payload = response.get_json()
+        self.assertGreater(payload["expires_at"], int(time.time()) + (47 * 60 * 60))
+        self.assertLessEqual(payload["expires_at"], int(time.time()) + (48 * 60 * 60))
         self.assertEqual(self.client.get(f"/scan/{payload['id']}").status_code, 200)
         log_response = self.client.get(f"/api/scans/{payload['id']}/log")
         self.assertEqual(log_response.data, VALID_LOG)

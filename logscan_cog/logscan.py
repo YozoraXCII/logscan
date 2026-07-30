@@ -25,19 +25,31 @@ class ScanPrompt(discord.ui.View):
         return False
 
     @discord.ui.button(label="Scan log", style=discord.ButtonStyle.primary, emoji="🔎")
-    async def scan(self, interaction: discord.Interaction, _button: discord.ui.Button):
-        await interaction.response.defer()
+    async def scan(self, interaction: discord.Interaction, button: discord.ui.Button):
         for item in self.children:
             item.disabled = True
-        await interaction.edit_original_response(view=self)
+        button.label = "Scanning…"
+        button.emoji = "⏳"
+        await interaction.response.edit_message(content="Scanning the attached log…", view=self)
         try:
-            url = await self.cog.scan_attachment(self.attachment)
+            view_url, delete_url, expires_at = await self.cog.scan_attachment(self.attachment)
         except (aiohttp.ClientError, ValueError) as exc:
-            await interaction.followup.send(f"I couldn't scan that file: {exc}")
+            button.label = "Scan failed"
+            button.emoji = "❌"
+            await interaction.edit_original_response(content="The log scan failed.", view=self)
+            await interaction.followup.send(f"I couldn't scan that file: {exc}", ephemeral=True)
             return
+        button.label = "Scan complete"
+        button.emoji = "✅"
+        await interaction.edit_original_response(content="Log scan complete.", view=self)
         await interaction.followup.send(
-            f"Scan complete: <{url}>\n"
-            "Anyone with this link can view the log and use its **Delete log** button."
+            f"Scan results: [Click Here]({view_url})\n"
+            f"This link is publicly viewable and will auto-delete <t:{expires_at}:R>."
+        )
+        await interaction.followup.send(
+            f"Your deletion link: [Click Here]({delete_url})\n"
+            "Keep this link private. Anyone with it can permanently delete the log.",
+            ephemeral=True,
         )
 
     @discord.ui.button(label="No thanks", style=discord.ButtonStyle.secondary)
@@ -75,7 +87,7 @@ class LogScan(commands.Cog):
             mention_author=False,
         )
 
-    async def scan_attachment(self, attachment: discord.Attachment) -> str:
+    async def scan_attachment(self, attachment: discord.Attachment) -> tuple[str, str, int]:
         base_url = (await self.config.url()).rstrip("/")
         api_key = await self.config.api_key()
         if not api_key:
@@ -97,7 +109,9 @@ class LogScan(commands.Cog):
                 payload = await response.json(content_type=None)
                 if response.status != 200:
                     raise ValueError(payload.get("error", f"server returned HTTP {response.status}"))
-        return f"{payload['result_url']}#delete={quote(payload['delete_token'], safe='')}"
+        view_url = payload["result_url"]
+        delete_url = f"{view_url}#delete={quote(payload['delete_token'], safe='')}"
+        return view_url, delete_url, int(payload["expires_at"])
 
     @commands.group(name="logscanset")
     @commands.is_owner()

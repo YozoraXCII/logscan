@@ -2,6 +2,7 @@ import hmac
 import os
 import threading
 import time
+from datetime import UTC, datetime, timedelta
 
 from flask import Flask, abort, jsonify, render_template, request, send_file, url_for
 from werkzeug.middleware.proxy_fix import ProxyFix
@@ -70,6 +71,7 @@ def create_app() -> Flask:
             return jsonify(error=str(exc)), 400
         scan_id, delete_token = store.create(upload.filename, content, result)
         result_url = url_for("result_page", scan_id=scan_id, _external=True)
+        expires_at = int((datetime.now(UTC) + timedelta(seconds=RETENTION_SECONDS)).timestamp())
         return jsonify(
             id=scan_id,
             filename=result.filename,
@@ -77,6 +79,7 @@ def create_app() -> Flask:
             metadata=result.metadata,
             result_url=result_url,
             delete_token=delete_token,
+            expires_at=expires_at,
             uploaded_by_bot=is_bot,
         )
 
