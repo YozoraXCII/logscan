@@ -91,9 +91,11 @@ def create_app() -> Flask:
         """Notify Discord when the website creates a new people-backlog entry."""
         webhook_url = app.config["DISCORD_PEOPLE_WEBHOOK_URL"]
         if not webhook_url:
+            app.logger.info("Missing-person webhook is not configured; no website notification sent.")
             return
         for person in people:
             if not person.get("is_new"):
+                app.logger.info("Missing-person webhook skipped for existing person: %s", person["name"])
                 continue
             message = (
                 f"Log Name: `{person['log_name']}`\n"
@@ -113,6 +115,7 @@ def create_app() -> Flask:
                 )
                 with urlopen(webhook_request, timeout=10):
                     pass
+                app.logger.info("Missing-person webhook sent for: %s", person["name"])
             except (HTTPError, URLError, TimeoutError) as exc:
                 app.logger.warning("Unable to send missing-person Discord webhook: %s", exc)
 
