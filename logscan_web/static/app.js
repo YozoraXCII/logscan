@@ -384,7 +384,17 @@ form.addEventListener("submit", async (event) => {
   body.append("log", file);
   try {
     const response = await fetch("/api/scan", { method: "POST", body });
-    const data = await response.json();
+    const responseText = await response.text();
+    let data;
+    try {
+      data = responseText ? JSON.parse(responseText) : {};
+    } catch {
+      const contentType = response.headers.get("content-type") || "unknown content type";
+      throw new Error(
+        `The server returned an unexpected response (${response.status} ${response.statusText}; ${contentType}). ` +
+        "Check that the reverse proxy routes /api/scan to Log Scanner and accepts this upload size."
+      );
+    }
     if (!response.ok) throw new Error(data.error || "The scan could not be completed.");
     status.textContent = "Scan complete";
     currentScanId = data.id;
