@@ -110,13 +110,23 @@ def create_app() -> Flask:
                 webhook_request = Request(
                     webhook_url,
                     data=payload,
-                    headers={"Content-Type": "application/json"},
+                    headers={
+                        "Content-Type": "application/json",
+                        "User-Agent": "Kometa-Logscan/1.0",
+                    },
                     method="POST",
                 )
                 with urlopen(webhook_request, timeout=10):
                     pass
                 app.logger.info("Missing-person webhook sent for: %s", person["name"])
-            except (HTTPError, URLError, TimeoutError) as exc:
+            except HTTPError as exc:
+                detail = exc.read().decode("utf-8", errors="replace")[:500]
+                app.logger.warning(
+                    "Unable to send missing-person Discord webhook: HTTP %s %s",
+                    exc.code,
+                    detail,
+                )
+            except (URLError, TimeoutError) as exc:
                 app.logger.warning("Unable to send missing-person Discord webhook: %s", exc)
 
     def cleanup_loop():
