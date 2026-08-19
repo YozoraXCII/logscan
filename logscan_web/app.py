@@ -71,13 +71,16 @@ def create_app() -> Flask:
             exact = next((item for item in matches if item.get("name", "").casefold() == name.casefold()), None)
             match = exact or (matches[0] if matches else None)
             tmdb_id = match.get("id") if match else None
+            image_data = tmdb_get(f"/person/{tmdb_id}/images") if tmdb_id else None
+            tmdb_image_found = bool((image_data or {}).get("profiles", []))
             key_seed = str(tmdb_id) if tmdb_id else name.casefold()
             key = f"tmdb-{tmdb_id}" if tmdb_id else f"name-{hashlib.sha256(key_seed.encode()).hexdigest()[:16]}"
             person, is_new = people_store.upsert_with_status({
                 "key": key,
                 "name": match.get("name", name) if match else name,
                 "tmdb_id": tmdb_id,
-                "tmdb_image_found": bool(candidate["tmdb_image_found"]),
+                "tmdb_image_found": tmdb_image_found,
+                "log_tmdb_image_found": bool(candidate["tmdb_image_found"]),
                 "log_name": filename,
                 "log_url": log_url,
                 "source_url": source_url,
@@ -93,41 +96,47 @@ def create_app() -> Flask:
         if not webhook_url:
             app.logger.info("Missing-person webhook is not configured; no website notification sent.")
             return
+        new_people = [person for person in people if person.get("is_new")]
         for person in people:
             if not person.get("is_new"):
                 app.logger.info("Missing-person webhook skipped for existing person: %s", person["name"])
-                continue
-            message = (
-                f"Log Name: `{person['log_name']}`\n"
-                f"Log Url: [Click Here]({person['log_url']})\n"
-                "Log Source: Not available\n"
-                f"Person Found: {person['name']}\n"
-                f"TMDb Image Found: {'Yes' if person.get('tmdb_image_found') else 'No'}\n"
-                f"Link: [Click Here]({person['people_url']})"
+        if not new_people:
+            return
+        first = new_people[0]
+        names = "\n".join(
+            f"- [{person['name']}]({person['people_url']}) — **TMDb Image Found:** "
+            f"{'Yes' if person.get('tmdb_image_found') else 'No'}"
+            for person in new_people
+        )
+        message = (
+            f"**Log Name:** `{first['log_name']}`\n"
+            f"**Log URL:** [Click Here]({first['log_url']})\n"
+            "**Log Source:** Not available\n"
+            f"**People Found:**\n{names}"
+        )
+        try:
+            payload = json.dumps({"content": message[:2000], "flags": 4}).encode("utf-8")
+            webhook_request = Request(
+                webhook_url,
+                data=payload,
+                headers={
+                    "Content-Type": "application/json",
+                    "User-Agent": "Kometa-Logscan/1.0",
+                },
+                method="POST",
             )
-            try:
-                payload = json.dumps({"content": message, "flags": 4}).encode("utf-8")
-                webhook_request = Request(
-                    webhook_url,
-                    data=payload,
-                    headers={
-                        "Content-Type": "application/json",
-                        "User-Agent": "Kometa-Logscan/1.0",
-                    },
-                    method="POST",
-                )
-                with urlopen(webhook_request, timeout=10):
-                    pass
-                app.logger.info("Missing-person webhook sent for: %s", person["name"])
-            except HTTPError as exc:
-                detail = exc.read().decode("utf-8", errors="replace")[:500]
-                app.logger.warning(
-                    "Unable to send missing-person Discord webhook: HTTP %s %s",
-                    exc.code,
-                    detail,
-                )
-            except (URLError, TimeoutError) as exc:
-                app.logger.warning("Unable to send missing-person Discord webhook: %s", exc)
+            with urlopen(webhook_request, timeout=10):
+                pass
+            app.logger.info("Missing-person webhook sent for %d new people.", len(new_people))
+        except HTTPError as exc:
+            detail = exc.read().decode("utf-8", errors="replace")[:500]
+            app.logger.warning(
+                "Unable to send missing-person Discord webhook: HTTP %s %s",
+                exc.code,
+                detail,
+            )
+        except (URLError, TimeoutError) as exc:
+            app.logger.warning("Unable to send missing-person Discord webhook: %s", exc)
 
     def cleanup_loop():
         while True:
@@ -252,6 +261,8 @@ def create_app() -> Flask:
                         "width": image.get("width"),
                         "height": image.get("height"),
                     })
+            if person.get("tmdb_image_found") != bool(images):
+                person = people_store.upsert({**person, "tmdb_image_found": bool(images)})
         limit = request.args.get("limit", type=int)
         if limit is not None:
             images = images[:max(0, min(limit, 100))]
