@@ -7,7 +7,7 @@ from datetime import UTC, datetime, timedelta
 from flask import Flask, abort, jsonify, render_template, request, send_file, url_for
 from werkzeug.middleware.proxy_fix import ProxyFix
 
-from .scanner import MAX_FILE_BYTES, ScanError, scan_log
+from .scanner import MAX_FILE_BYTES, ScanError, prepare_scan_input, scan_log
 from .storage import ScanStore
 
 RETENTION_SECONDS = 48 * 60 * 60
@@ -66,10 +66,11 @@ def create_app() -> Flask:
             return jsonify(error="Choose a log file to scan."), 400
         try:
             content = upload.read()
-            result = scan_log(upload.filename, content)
+            filename, content = prepare_scan_input(upload.filename, content)
+            result = scan_log(filename, content)
         except ScanError as exc:
             return jsonify(error=str(exc)), 400
-        scan_id, delete_token = store.create(upload.filename, content, result)
+        scan_id, delete_token = store.create(filename, content, result)
         result_url = url_for("result_page", scan_id=scan_id, _external=True)
         expires_at = int((datetime.now(UTC) + timedelta(seconds=RETENTION_SECONDS)).timestamp())
         return jsonify(

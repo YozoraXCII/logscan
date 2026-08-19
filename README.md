@@ -156,7 +156,7 @@ python -m unittest discover -s tests -v
 - `logscan_web/app.py` — Flask routes and upload handling
 - `logscan_web/storage.py` — filesystem persistence and deletion tokens
 - `logscan_web/scanner.py` — input validation and result normalization
-- `logscan_web/engine.py` — standalone recommendation engine
+- `logscan_web/models.py` and `logscan_web/rules/` — structured scan data and modular recommendation rules
 - `logscan_web/templates/` — HTML interface
 - `logscan_web/static/` — styles and browser behavior
 - `tests/` — scanner and API regression tests

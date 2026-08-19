@@ -83,7 +83,7 @@ function selectedFile(file) {
   currentLogLines = null;
   currentLogSections = [];
   scanButton.disabled = !chosen;
-  filePill.textContent = chosen ? `${chosen.name} · ${formatBytes(chosen.size)}` : "LOG, TXT or YML · up to 100 MB";
+  filePill.textContent = chosen ? `${chosen.name} · ${formatBytes(chosen.size)}` : "LOG, TXT, YAML or archive · up to 100 MB";
   status.textContent = chosen ? "File selected" : "Ready to scan";
   status.classList.remove("error");
 }

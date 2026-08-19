@@ -1,6 +1,12 @@
 import re
+import tempfile
+import zipfile
 from dataclasses import dataclass
-from pathlib import Path
+from io import BytesIO
+from pathlib import Path, PurePosixPath
+
+import py7zr
+import rarfile
 
 from .models import ScanContext
 from .rules import RuleRegistry, migrated_rules
@@ -9,10 +15,113 @@ from .categories import category_configuration
 
 MAX_FILE_BYTES = 100 * 1024 * 1024
 ALLOWED_SUFFIXES = {".txt", ".log", ".yml", ".yaml"}
+ZIP_UNEXPECTED_CONTENTS_ERROR = "The ZIP contained unexpected contents and was not scanned."
 
 
 class ScanError(ValueError):
     pass
+
+
+def _validate_archive_names(names: list[str]) -> list[str]:
+    files = []
+    for name in names:
+        path = PurePosixPath(name.replace("\\", "/"))
+        if not name.endswith(("/", "\\")):
+            if path.is_absolute() or ".." in path.parts or path.suffix.lower() not in ALLOWED_SUFFIXES:
+                raise ScanError(ZIP_UNEXPECTED_CONTENTS_ERROR)
+            files.append(name)
+    if not files:
+        raise ScanError("The archive does not contain any files to scan.")
+    return files
+
+
+def _combine_extracted_files(root: Path, names: list[str]) -> bytes:
+    extracted_files = []
+    extracted_size = 0
+    for name in names:
+        path = root.joinpath(*PurePosixPath(name.replace("\\", "/")).parts)
+        if not path.is_file():
+            raise ScanError("The archive could not be extracted.")
+        extracted_file = path.read_bytes()
+        extracted_size += len(extracted_file)
+        if extracted_size > MAX_FILE_BYTES:
+            raise ScanError("The extracted archive contents are larger than the 100 MB limit.")
+        extracted_files.append(extracted_file)
+    return b"\n\n".join(extracted_files)
+
+
+def _extract_zip(filename: str, content_bytes: bytes) -> tuple[str, bytes]:
+    try:
+        with zipfile.ZipFile(BytesIO(content_bytes)) as archive:
+            files = _validate_archive_names([entry.filename for entry in archive.infolist()])
+            entries = [archive.getinfo(name) for name in files]
+            if any(entry.flag_bits & 0x1 for entry in entries):
+                raise ScanError("The ZIP contains encrypted files and cannot be scanned.")
+            if sum(entry.file_size for entry in entries) > MAX_FILE_BYTES:
+                raise ScanError("The extracted ZIP contents are larger than the 100 MB limit.")
+            extracted_files = []
+            extracted_size = 0
+            for entry in entries:
+                with archive.open(entry) as member:
+                    extracted_file = member.read(MAX_FILE_BYTES - extracted_size + 1)
+                extracted_size += len(extracted_file)
+                if extracted_size > MAX_FILE_BYTES:
+                    raise ScanError("The extracted ZIP contents are larger than the 100 MB limit.")
+                extracted_files.append(extracted_file)
+            extracted = b"\n\n".join(extracted_files)
+    except zipfile.BadZipFile as exc:
+        raise ScanError("The selected ZIP file is invalid.") from exc
+
+    if not extracted:
+        raise ScanError("The ZIP does not contain any text to scan.")
+    return f"{Path(filename).stem}.log", extracted
+
+
+def _extract_7z(filename: str, content_bytes: bytes) -> tuple[str, bytes]:
+    try:
+        with py7zr.SevenZipFile(BytesIO(content_bytes), mode="r") as archive:
+            if archive.needs_password():
+                raise ScanError("The 7z archive is encrypted and cannot be scanned.")
+            files = _validate_archive_names(archive.getnames())
+            with tempfile.TemporaryDirectory() as directory:
+                archive.extract(path=directory, targets=files)
+                extracted = _combine_extracted_files(Path(directory), files)
+    except py7zr.Bad7zFile as exc:
+        raise ScanError("The selected 7z file is invalid.") from exc
+    if not extracted:
+        raise ScanError("The archive does not contain any text to scan.")
+    return f"{Path(filename).stem}.log", extracted
+
+
+def _extract_rar(filename: str, content_bytes: bytes) -> tuple[str, bytes]:
+    try:
+        with rarfile.RarFile(BytesIO(content_bytes)) as archive:
+            infos = [info for info in archive.infolist() if not info.isdir()]
+            files = _validate_archive_names([info.filename for info in infos])
+            if any(info.needs_password() for info in infos):
+                raise ScanError("The RAR archive is encrypted and cannot be scanned.")
+            if sum(info.file_size for info in infos) > MAX_FILE_BYTES:
+                raise ScanError("The extracted archive contents are larger than the 100 MB limit.")
+            extracted = b"\n\n".join(archive.read(name) for name in files)
+    except rarfile.Error as exc:
+        raise ScanError("The selected RAR file is invalid or cannot be extracted.") from exc
+    if not extracted:
+        raise ScanError("The archive does not contain any text to scan.")
+    return f"{Path(filename).stem}.log", extracted
+
+
+def prepare_scan_input(filename: str, content_bytes: bytes) -> tuple[str, bytes]:
+    """Validate an upload and return the text that should be stored and scanned."""
+    suffix = Path(filename).suffix.lower()
+    if suffix == ".zip":
+        return _extract_zip(filename, content_bytes)
+    if suffix == ".7z":
+        return _extract_7z(filename, content_bytes)
+    if suffix == ".rar":
+        return _extract_rar(filename, content_bytes)
+    if suffix not in ALLOWED_SUFFIXES and not suffix.lstrip(".").isdigit():
+        raise ScanError("Choose a Kometa .log, .txt, .yml, .yaml, .zip, .rar, or .7z file.")
+    return filename, content_bytes
 
 
 @dataclass(frozen=True)
@@ -120,9 +229,7 @@ def _log_overview(
 
 
 def scan_log(filename: str, content_bytes: bytes) -> ScanResult:
-    suffix = Path(filename).suffix.lower()
-    if suffix not in ALLOWED_SUFFIXES and not suffix.lstrip(".").isdigit():
-        raise ScanError("Choose a Kometa .log, .txt, .yml, .yaml, or rotated log file.")
+    filename, content_bytes = prepare_scan_input(filename, content_bytes)
     if not content_bytes:
         raise ScanError("The selected file is empty.")
     if len(content_bytes) > MAX_FILE_BYTES:
