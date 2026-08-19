@@ -8,6 +8,7 @@ import json
 import os
 import secrets
 import shutil
+import threading
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -91,3 +92,53 @@ class ScanStore:
     @staticmethod
     def _valid_id(scan_id: str) -> bool:
         return bool(scan_id) and scan_id.replace("-", "").replace("_", "").isalnum()
+
+
+class PeopleStore:
+    """A small durable backlog for People Posters work, independent of scan expiry."""
+
+    def __init__(self, root: str | os.PathLike[str]):
+        self.path = Path(root) / "people.json"
+        self.lock = threading.Lock()
+
+    def list(self) -> list[dict]:
+        with self.lock:
+            return self._read()
+
+    def get(self, key: str) -> dict | None:
+        return next((person for person in self.list() if person["key"] == key), None)
+
+    def upsert(self, person: dict) -> dict:
+        with self.lock:
+            people = self._read()
+            existing = next((item for item in people if item["key"] == person["key"]), None)
+            if existing:
+                existing.update({key: value for key, value in person.items() if value is not None})
+                existing["last_seen_at"] = datetime.now(UTC).isoformat()
+                result = existing
+            else:
+                result = {**person, "created_at": datetime.now(UTC).isoformat(), "last_seen_at": datetime.now(UTC).isoformat()}
+                people.append(result)
+            self._write(people)
+            return result.copy()
+
+    def delete(self, key: str) -> bool:
+        with self.lock:
+            people = self._read()
+            remaining = [person for person in people if person["key"] != key]
+            if len(remaining) == len(people):
+                return False
+            self._write(remaining)
+            return True
+
+    def _read(self) -> list[dict]:
+        try:
+            result = json.loads(self.path.read_text(encoding="utf-8"))
+            return result if isinstance(result, list) else []
+        except (FileNotFoundError, json.JSONDecodeError):
+            return []
+
+    def _write(self, people: list[dict]) -> None:
+        temporary = self.path.with_suffix(".tmp")
+        temporary.write_text(json.dumps(people, ensure_ascii=False), encoding="utf-8")
+        temporary.replace(self.path)

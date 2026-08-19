@@ -1,14 +1,18 @@
 import hmac
+import hashlib
 import os
 import threading
 import time
 from datetime import UTC, datetime, timedelta
+from urllib.error import HTTPError, URLError
+from urllib.parse import urlencode
+from urllib.request import Request, urlopen
 
 from flask import Flask, abort, jsonify, render_template, request, send_file, url_for
 from werkzeug.middleware.proxy_fix import ProxyFix
 
-from .scanner import MAX_FILE_BYTES, ScanError, prepare_scan_input, scan_log
-from .storage import ScanStore
+from .scanner import MAX_FILE_BYTES, ScanError, extract_missing_people, prepare_scan_input, scan_log
+from .storage import PeopleStore, ScanStore
 
 RETENTION_SECONDS = 48 * 60 * 60
 CLEANUP_INTERVAL_SECONDS = 60 * 60
@@ -19,8 +23,48 @@ def create_app() -> Flask:
     app.config["MAX_CONTENT_LENGTH"] = MAX_FILE_BYTES + (1024 * 1024)
     app.config["SCAN_STORE"] = os.environ.get("SCAN_STORE", "/data/scans")
     app.config["LOGSCAN_API_KEY"] = os.environ.get("LOGSCAN_API_KEY", "")
+    app.config["TMDB_API_KEY"] = os.environ.get("TMDB_API_KEY", "")
     app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
     store = ScanStore(app.config["SCAN_STORE"])
+    people_store = PeopleStore(app.config["SCAN_STORE"])
+
+    def tmdb_get(path: str, params: dict | None = None) -> dict | None:
+        api_key = app.config["TMDB_API_KEY"]
+        if not api_key:
+            return None
+        query = urlencode({"api_key": api_key, **(params or {})})
+        request_url = f"https://api.themoviedb.org/3{path}?{query}"
+        try:
+            with urlopen(Request(request_url, headers={"Accept": "application/json"}), timeout=10) as response:
+                import json
+                return json.loads(response.read().decode("utf-8"))
+        except (HTTPError, URLError, TimeoutError, ValueError):
+            app.logger.warning("TMDb lookup failed for %s", path)
+            return None
+
+    def save_missing_people(candidates: list[dict], *, filename: str, log_url: str, source_url: str | None) -> list[dict]:
+        saved = []
+        for candidate in candidates:
+            name = candidate["name"]
+            match_data = tmdb_get("/search/person", {"query": name})
+            matches = (match_data or {}).get("results", [])
+            exact = next((item for item in matches if item.get("name", "").casefold() == name.casefold()), None)
+            match = exact or (matches[0] if matches else None)
+            tmdb_id = match.get("id") if match else None
+            key_seed = str(tmdb_id) if tmdb_id else name.casefold()
+            key = f"tmdb-{tmdb_id}" if tmdb_id else f"name-{hashlib.sha256(key_seed.encode()).hexdigest()[:16]}"
+            person = people_store.upsert({
+                "key": key,
+                "name": match.get("name", name) if match else name,
+                "tmdb_id": tmdb_id,
+                "tmdb_image_found": bool(candidate["tmdb_image_found"]),
+                "log_name": filename,
+                "log_url": log_url,
+                "source_url": source_url,
+            })
+            person["people_url"] = url_for("person_page", person_key=person["key"], _external=True)
+            saved.append(person)
+        return saved
 
     def cleanup_loop():
         while True:
@@ -41,6 +85,16 @@ def create_app() -> Flask:
     @app.get("/")
     def index():
         return render_template("index.html", initial_scan=None)
+
+    @app.get("/people")
+    def people_page():
+        return render_template("people.html")
+
+    @app.get("/people/<person_key>")
+    def person_page(person_key):
+        if people_store.get(person_key) is None:
+            abort(404)
+        return render_template("person.html", person_key=person_key)
 
     @app.get("/scan/<scan_id>")
     def result_page(scan_id):
@@ -73,6 +127,13 @@ def create_app() -> Flask:
             return jsonify(error=str(exc)), 400
         scan_id, delete_token = store.create(filename, content, result)
         result_url = url_for("result_page", scan_id=scan_id, _external=True)
+        source_url = request.form.get("source_url") if is_bot else None
+        missing_people = save_missing_people(
+            extract_missing_people(content.decode("utf-8", errors="replace")),
+            filename=result.filename,
+            log_url=result_url,
+            source_url=source_url,
+        )
         expires_at = int((datetime.now(UTC) + timedelta(seconds=RETENTION_SECONDS)).timestamp())
         return jsonify(
             id=scan_id,
@@ -85,7 +146,43 @@ def create_app() -> Flask:
             delete_token=delete_token,
             expires_at=expires_at,
             uploaded_by_bot=is_bot,
+            missing_people=missing_people,
         )
+
+    @app.get("/api/people")
+    def people():
+        people = people_store.list()
+        for person in people:
+            person["people_url"] = url_for("person_page", person_key=person["key"], _external=True)
+        return jsonify(people=people)
+
+    @app.get("/api/people/<person_key>/images")
+    def person_images(person_key):
+        person = people_store.get(person_key)
+        if person is None:
+            abort(404)
+        images = []
+        if person.get("tmdb_id"):
+            data = tmdb_get(f"/person/{person['tmdb_id']}/images", {"include_image_language": "en,null"})
+            for image in (data or {}).get("profiles", []):
+                path = image.get("file_path")
+                if path:
+                    images.append({
+                        "preview_url": f"https://image.tmdb.org/t/p/w342{path}",
+                        "download_url": f"https://image.tmdb.org/t/p/original{path}",
+                        "width": image.get("width"),
+                        "height": image.get("height"),
+                    })
+        limit = request.args.get("limit", type=int)
+        if limit is not None:
+            images = images[:max(0, min(limit, 100))]
+        return jsonify(person=person, images=images)
+
+    @app.delete("/api/people/<person_key>")
+    def complete_person(person_key):
+        if not people_store.delete(person_key):
+            abort(404)
+        return "", 204
 
     @app.get("/api/scans/<scan_id>/log")
     def stored_log(scan_id):

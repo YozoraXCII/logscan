@@ -24,6 +24,38 @@ class ScanError(ValueError):
     pass
 
 
+def extract_missing_people(content: str) -> list[dict[str, str | bool]]:
+    """Return unique People Posters missing from a Kometa log.
+
+    This mirrors the live cog's two signals: a TMDb poster update followed by
+    its collection name, and the later "No Poster Found" warning.  The latter
+    has no TMDb source image.
+    """
+    people: dict[str, bool] = {}
+    for match in re.finditer(
+        r"Detail: tmdb_person updated poster to \[URL\] https?://[^\s|]+"
+        r"(?:\s*\|)?\s*\n.*?\n.*?\n.*?Finished (?P<name>.+?) Collection",
+        content,
+        re.IGNORECASE,
+    ):
+        name = re.sub(r" \((?:Director|Producer|Writer)\)$", "", match.group("name").strip())
+        if name:
+            people[name] = True
+    for match in re.finditer(
+        r"Collection Warning: No Poster Found at https://raw\.githubusercontent\.com/"
+        r"Kometa-Team/People-Images[^\s]*?/(?P<name>[^/\s]+?)(?:\.[A-Za-z0-9]+)?(?=\s|$)",
+        content,
+        re.IGNORECASE,
+    ):
+        name = re.sub(r"\.[A-Za-z0-9]+$", "", match.group("name")).replace("%20", " ").strip()
+        if name and name not in people:
+            people[name] = False
+    return [
+        {"name": name, "tmdb_image_found": has_image}
+        for name, has_image in people.items()
+    ]
+
+
 def _validate_archive_names(
     names: list[str],
     unexpected_contents_error: str = ZIP_UNEXPECTED_CONTENTS_ERROR,

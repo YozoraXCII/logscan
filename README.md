@@ -71,6 +71,7 @@ public instance.
 docker build -t kometa-logscan-web .
 docker run --rm -p 8000:8000 \
   -e LOGSCAN_API_KEY=replace-me \
+  -e TMDB_API_KEY=your-tmdb-api-key \
   -v logscan-data:/data \
   kometa-logscan-web
 ```
@@ -125,6 +126,17 @@ are not included in HTTP requests, but anyone who receives the complete link
 can view and permanently delete that log. A result URL without the fragment is
 view-only. All links expire when their scan is automatically deleted after 48
 hours.
+
+## Missing People backlog
+
+When a scan encounters a missing People Poster, the website records the person
+in the persistent `/people` backlog. Set `TMDB_API_KEY` in the web service
+environment so the service can resolve a TMDb person ID and load their profile
+images. A person remains in the backlog until someone marks them complete.
+
+The cog sends one non-embedding notification per detected person to channel
+`1539665929330499664`, including the scan, original Discord message (where
+available), TMDb-image status, and the person page.
 
 ## Reverse proxy notes
 

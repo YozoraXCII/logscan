@@ -40,7 +40,7 @@ function displayValue(value) {
   return value || "Not found in this log";
 }
 
-function formatOverviewTimestamp(unixTimestamp) {
+ function formatOverviewTimestamp(unixTimestamp) {
   const date = new Date(unixTimestamp * 1000);
   const part = (value) => String(value).padStart(2, "0");
   return `${date.getFullYear()}-${part(date.getMonth() + 1)}-${part(date.getDate())} ${part(date.getHours())}:${part(date.getMinutes())}:${part(date.getSeconds())}`;

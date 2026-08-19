@@ -117,3 +117,8 @@ class RuntimeAnalysisRule:
         if not context.complete:
             add("incomplete_log")
         return findings
+
+
+# Compatibility names retained for callers that used the earlier split-rule API.
+MemoryAnalysisRule = RuntimeAnalysisRule
+ScheduleAnalysisRule = RuntimeAnalysisRule
