@@ -25,7 +25,6 @@ RULES = (
     _rule("legacy_missing", "missing_path", "save_missing"),
     _rule("legacy_overlay_level", "overlay_level:"),
     _rule("yaml", "ruamel.yaml."),
-    _rule("run_order", "run_order:"),
     _same_line_rule("flixpatrol_subscription", "flixpatrol", "- pmm:"),
     _same_line_rule("service_config", "Error: ", " requires ", " to be configured"),
 )
