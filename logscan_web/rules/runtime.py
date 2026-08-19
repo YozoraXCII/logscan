@@ -19,7 +19,7 @@ RULES = (
     TextRule(next(rule for rule in RULES.values() if rule.id == "wsl_memory"), all_of=("Platform:", "-WSL")),
     _rule("plexapi_update", "requires an update to:"),
     _rule("kometa_update", "Newest Version:"),
-    _rule("linuxserver", "(Linuxserver"),
+    TextRule(next(rule for rule in RULES.values() if rule.id == "linuxserver"), all_on_same_line=("(Linuxserver", "Version:")),
     _rule("checkfiles", "checkFiles=1"),
 )
 

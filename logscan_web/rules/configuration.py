@@ -9,6 +9,11 @@ def _rule(rule_id: str, *needles: str) -> TextRule:
     return TextRule(definition, any_of=needles)
 
 
+def _same_line_rule(rule_id: str, *needles: str) -> TextRule:
+    definition = next(rule for rule in RULES.values() if rule.id == rule_id)
+    return TextRule(definition, all_on_same_line=needles)
+
+
 RULES = (
     _rule("cache_disabled", "cache: false"),
     _rule("legacy_other_award", "other_award"),
@@ -21,5 +26,6 @@ RULES = (
     _rule("legacy_overlay_level", "overlay_level:"),
     _rule("yaml", "ruamel.yaml."),
     _rule("run_order", "run_order:"),
-    _rule("service_config", "to be configured"),
+    _same_line_rule("flixpatrol_subscription", "flixpatrol", "- pmm:"),
+    _same_line_rule("service_config", "Error: ", " requires ", " to be configured"),
 )

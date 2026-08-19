@@ -9,18 +9,26 @@ def _rule(rule_id: str, *needles: str) -> TextRule:
     return TextRule(definition, any_of=needles)
 
 
+def _same_line_rule(rule_id: str, *needles: str) -> TextRule:
+    definition = next(rule for rule in RULES.values() if rule.id == rule_id)
+    return TextRule(definition, all_on_same_line=needles)
+
+
 RULES = (
     _rule("api_key_missing", "apikey is blank"),
-    _rule("plex_version", "1.32.7", "Connected to server"),
+    TextRule(
+        next(rule for rule in RULES.values() if rule.id == "plex_version"),
+        all_on_same_line=("1.32.7", "Connected to server"),
+    ),
     _rule("kometa_critical", "[CRITICAL]"),
     _rule("kometa_error", "[ERROR]"),
     _rule("kometa_warning", "[WARNING]"),
-    _rule("id_conversion", "Convert Warning: No "),
+    _same_line_rule("id_conversion", "Convert Warning: No ", "ID Found for"),
     _rule("image_unreadable", "PIL.UnidentifiedImageError: cannot"),
-    _rule("flixpatrol_parse", "FlixPatrol Error:", "failed to parse"),
+    _same_line_rule("flixpatrol_parse", "FlixPatrol Error:", "failed to parse"),
     _rule("image_size", "in _upload_image"),
     _rule("internal_server", "internal_server_error"),
-    _rule("mass_update", "Config Error: Operation mass_"),
+    _same_line_rule("mass_update", "Config Error: Operation mass_", "without a successful"),
     _rule("metadata_load", "Metadata File Failed To Load"),
     _rule("overlay_load", "Overlay File Failed To Load"),
     _rule("playlist_load", "Playlist File Failed To Load"),
@@ -29,9 +37,9 @@ RULES = (
     _rule("overlay_reset", "Reapply Overlays: True", "Reset Overlays: ["),
     _rule("overlay_existing", "Poster already has an Overlay"),
     _rule("overlay_image", "Overlay Image not found"),
-    _rule("playlist_library", "Playlist Error: Library:", "not defined"),
-    _rule("plex_regex", "No matches found with regex pattern"),
-    _rule("plex_library", "Plex Error: Plex Library", "not found"),
+    _same_line_rule("playlist_library", "Playlist Error: Library:", "not defined"),
+    _same_line_rule("plex_regex", "Plex Error: ", "No matches found with regex pattern"),
+    _same_line_rule("plex_library", "Plex Error: Plex Library", "not found"),
     _rule("plex_url", "Plex Error: Plex url is invalid"),
     _rule("rating_rounding", "mass_user_rating_update", "mass_episode_user_ratings_update"),
     _rule("plex_security", "Connected to server"),

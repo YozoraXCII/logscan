@@ -15,6 +15,7 @@ class TextRule:
     definition: RuleDefinition
     any_of: tuple[str, ...] = ()
     all_of: tuple[str, ...] = ()
+    all_on_same_line: tuple[str, ...] = ()
 
     @property
     def id(self) -> str:
@@ -24,14 +25,17 @@ class TextRule:
         lines = tuple(line.lower() for line in context.lines)
         any_of = tuple(value.lower() for value in self.any_of)
         all_of = tuple(value.lower() for value in self.all_of)
+        all_on_same_line = tuple(value.lower() for value in self.all_on_same_line)
         if any_of and not any(any(value in line for value in any_of) for line in lines):
             return []
         if all_of and not all(any(value in line for line in lines) for value in all_of):
             return []
+        if all_on_same_line and not any(all(value in line for value in all_on_same_line) for line in lines):
+            return []
         evidence = tuple(
             number
             for number, line in enumerate(lines, start=1)
-            if any(value in line for value in any_of + all_of)
+            if any(value in line for value in any_of + all_of + all_on_same_line)
         )
         return [Finding(
             self.id,
