@@ -77,6 +77,8 @@ def create_app() -> Flask:
             filename=result.filename,
             recommendations=result.recommendations,
             metadata=result.metadata,
+            overview=result.overview,
+            categories=result.categories,
             result_url=result_url,
             delete_token=delete_token,
             expires_at=expires_at,

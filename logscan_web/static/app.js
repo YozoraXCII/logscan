@@ -24,11 +24,54 @@ let viewerLastLine = 1;
 let loadingViewerChunk = false;
 const VIEWER_CHUNK_SIZE = 1000;
 
-const groups = [
+const defaultGroups = [
+  { key: "overview", label: "Log Overview", description: "Details extracted from the uploaded log." },
   { key: "critical", label: "Critical issues", description: "Items most likely to prevent a successful or secure run." },
+  { key: "error", label: "Errors", description: "Problems that may cause incomplete or unintended results." },
   { key: "warning", label: "Warnings", description: "Potential problems worth reviewing before your next run." },
+  { key: "schema", label: "Schema issues", description: "Deprecated or invalid configuration syntax that should be updated." },
   { key: "advice", label: "Advice", description: "Configuration and performance improvements." },
 ];
+
+function displayValue(value) {
+  return value || "Not found in this log";
+}
+
+function showOverview(group, overview) {
+  document.querySelectorAll(".nav-button").forEach((button) => {
+    button.classList.toggle("active", button.dataset.group === group.key);
+  });
+  sectionContent.replaceChildren();
+  const header = document.createElement("div");
+  header.className = "section-header";
+  header.innerHTML = `<h3>${group.label}</h3><p>${group.description}</p>`;
+  sectionContent.append(header);
+  const details = [
+    ["Log name", overview.log_name],
+    ["Number of recommendations", overview.recommendation_count],
+    ["Kometa version", overview.kometa_version],
+    ["Platform", overview.platform],
+    ["Total memory", overview.total_memory],
+    ["Available memory", overview.available_memory],
+    ["Run command", overview.run_command],
+    ["Start time", overview.start_time],
+    ["End time", overview.finished],
+    ["Run time", overview.run_time],
+    ["YAML validation", overview.yaml_validation],
+  ];
+  const grid = document.createElement("dl");
+  grid.className = "overview-grid";
+  details.forEach(([label, value]) => {
+    const item = document.createElement("div");
+    const term = document.createElement("dt");
+    const definition = document.createElement("dd");
+    term.textContent = label;
+    definition.textContent = displayValue(value);
+    item.append(term, definition);
+    grid.append(item);
+  });
+  sectionContent.append(grid);
+}
 
 function selectedFile(file) {
   input.files = file ? makeFileList(file) : input.files;
@@ -119,18 +162,38 @@ function appendRecommendationMeta(container, text) {
   container.append(document.createTextNode(references.slice(cursor)));
 }
 
-function recommendationBody(message) {
+function formatLineRanges(lineNumbers) {
+  const sorted = [...new Set(lineNumbers)].sort((left, right) => left - right);
+  const ranges = [];
+  for (let index = 0; index < sorted.length; index += 1) {
+    const start = sorted[index];
+    let end = start;
+    while (sorted[index + 1] === end + 1) end = sorted[++index];
+    ranges.push(start === end ? String(start) : `${start}-${end}`);
+  }
+  return ranges.join(", ");
+}
+
+function recommendationBody(message, evidenceLines = []) {
   const body = document.createElement("div");
   body.className = "recommendation-body";
+  const hasEmbeddedEvidence = /Line number\(s\):/i.test(message);
   const lines = message.split("\n").slice(1);
   lines.forEach((line) => {
     const row = document.createElement("div");
     if (/^\s*\d+\s+line\(s\)/i.test(line)) row.className = "recommendation-meta";
+    if (/^Proposed solution:/i.test(line)) row.classList.add("recommendation-solution");
     if (!line.trim()) row.classList.add("spacer");
     if (row.classList.contains("recommendation-meta")) appendRecommendationMeta(row, line);
     else appendInlineFormatting(row, line);
     body.append(row);
   });
+  if (!hasEmbeddedEvidence && evidenceLines.length) {
+    const row = document.createElement("div");
+    row.className = "recommendation-meta";
+    appendRecommendationMeta(row, `Log line number(s): ${formatLineRanges(evidenceLines)}`);
+    body.append(row);
+  }
   return body;
 }
 
@@ -280,9 +343,14 @@ function showGroup(group, recommendations) {
   const matches = recommendations
     .filter((item) => item.severity === group.key)
     .sort((left, right) => {
-      if (group.key !== "warning") return 0;
-      return Number(left.title === "Kometa warnings detected")
-        - Number(right.title === "Kometa warnings detected");
+      const summaryIds = ["kometa_critical", "kometa_error", "kometa_warning"];
+      const leftPriority = summaryIds.indexOf(left.id);
+      const rightPriority = summaryIds.indexOf(right.id);
+      if (leftPriority !== rightPriority) {
+        return (leftPriority === -1 ? summaryIds.length : leftPriority)
+          - (rightPriority === -1 ? summaryIds.length : rightPriority);
+      }
+      return left.title.localeCompare(right.title);
     });
   if (!matches.length) {
     const empty = document.createElement("div");
@@ -306,7 +374,8 @@ function showGroup(group, recommendations) {
     chevron.className = "chevron";
     chevron.textContent = "›";
     summary.append(dot, titleText, chevron);
-    details.append(summary, recommendationBody(item.message));
+    const body = recommendationBody(item.message, item.evidence_lines);
+    details.append(summary, body);
     list.append(details);
   });
   sectionContent.append(list);
@@ -326,32 +395,38 @@ function summaryCard(label, value, small = false) {
 }
 
 function renderResults(data) {
-  const { metadata, recommendations } = data;
+  const { metadata, recommendations, overview = {}, categories = defaultGroups } = data;
+  const groups = [...categories].sort((left, right) => left.priority - right.priority);
   document.querySelector("#results-title").textContent = data.filename;
-  summaryGrid.replaceChildren(
+  if (summaryGrid) summaryGrid.replaceChildren(
     summaryCard("Log details", `${metadata.line_count.toLocaleString()} lines · ${formatBytes(metadata.size_bytes)}${metadata.kometa_version ? `\nKometa ${metadata.kometa_version}` : ""}`, true),
     summaryCard("Critical", metadata.counts.critical),
     summaryCard("Warnings", metadata.counts.warning),
+    summaryCard("Schema", metadata.counts.schema),
     summaryCard("Advice", metadata.counts.advice),
   );
 
   sectionNav.replaceChildren();
   groups.forEach((group) => {
-    const count = recommendations.filter((item) => item.severity === group.key).length;
     const button = document.createElement("button");
     button.type = "button";
     button.className = "nav-button";
     button.dataset.group = group.key;
     const label = document.createElement("span");
     label.textContent = group.label;
-    const badge = document.createElement("span");
-    badge.className = "nav-count";
-    badge.textContent = count;
-    button.append(label, badge);
-    button.addEventListener("click", () => showGroup(group, recommendations));
+    button.append(label);
+    if (group.key !== "overview") {
+      const badge = document.createElement("span");
+      badge.className = "nav-count";
+      badge.textContent = recommendations.filter((item) => item.severity === group.key).length;
+      button.append(badge);
+    }
+    button.addEventListener("click", () => group.key === "overview"
+      ? showOverview(group, overview)
+      : showGroup(group, recommendations));
     sectionNav.append(button);
   });
-  showGroup(groups.find((group) => metadata.counts[group.key] > 0) || groups[0], recommendations);
+  showOverview(groups[0], overview);
   results.hidden = false;
   currentScanId = data.id || currentScanId;
   document.querySelector("#delete-scan").hidden = !deleteToken;

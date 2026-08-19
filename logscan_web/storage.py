@@ -29,6 +29,8 @@ class ScanStore:
             "created_at": datetime.now(UTC).isoformat(),
             "recommendations": result.recommendations,
             "metadata": result.metadata,
+            "overview": result.overview,
+            "categories": result.categories,
             "delete_token_hash": hashlib.sha256(delete_token.encode()).hexdigest(),
         }
         temporary = directory / "result.json.tmp"

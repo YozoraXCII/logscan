@@ -1,9 +1,10 @@
-import asyncio
 import re
 from dataclasses import dataclass
 from pathlib import Path
 
-from .engine import StandaloneLogScanner
+from .models import ScanContext
+from .rules import RuleRegistry, migrated_rules
+from .categories import category_configuration
 
 
 MAX_FILE_BYTES = 100 * 1024 * 1024
@@ -19,6 +20,8 @@ class ScanResult:
     filename: str
     recommendations: list[dict]
     metadata: dict
+    overview: dict
+    categories: list[dict]
 
 
 def _plain_title(value: str) -> str:
@@ -72,8 +75,48 @@ def _severity(first_line: str) -> str:
     return "advice"
 
 
-def _new_scanner() -> StandaloneLogScanner:
-    return StandaloneLogScanner()
+def _first_value(content: str, label: str) -> str | None:
+    match = re.search(rf"\b{re.escape(label)}:\s*(.+?)(?:\s*\|)?\s*$", content, re.MULTILINE)
+    return match.group(1).strip() if match else None
+
+
+def _date_first(value: str | None) -> str | None:
+    if not value:
+        return None
+    match = re.fullmatch(r"(\d{1,2}:\d{2}:\d{2})\s+(\d{4}-\d{2}-\d{2})", value)
+    return f"{match.group(2)} {match.group(1)}" if match else value
+
+
+def _log_overview(
+    filename: str,
+    content: str,
+    kometa_version: str | None,
+    run_time: str | None,
+    recommendations: list[dict],
+) -> dict:
+    yaml_findings = [item for item in recommendations if item["severity"] == "schema"]
+    yaml_status = "Schema issues detected" if yaml_findings else "No YAML or schema issues detected"
+    completed_run = re.search(
+        r"Start Time:\s*(?P<start>.*?)\s+Finished:\s*(?P<end>.*?)\s+Run Time:\s*(?P<runtime>[^|\r\n]+)",
+        content,
+    )
+    return {
+        "log_name": filename,
+        "recommendation_count": len(recommendations),
+        "kometa_version": kometa_version,
+        "platform": _first_value(content, "Platform"),
+        "total_memory": _first_value(content, "Memory"),
+        "available_memory": _first_value(content, "Available Memory"),
+        "run_command": _first_value(content, "Run Command"),
+        "start_time": _date_first(completed_run.group("start").strip()) if completed_run else _first_value(content, "Started"),
+        "finished": _date_first(completed_run.group("end").strip()) if completed_run else _first_value(content, "Finished"),
+        "run_time": (
+            completed_run.group("runtime").strip()
+            if completed_run else run_time
+        ),
+        "yaml_validation": yaml_status,
+        "yaml_issue_count": len(yaml_findings),
+    }
 
 
 def scan_log(filename: str, content_bytes: bytes) -> ScanResult:
@@ -90,37 +133,39 @@ def scan_log(filename: str, content_bytes: bytes) -> ScanResult:
     if "[kometa.py:" not in lowered and "[plex_meta_manager.py:" not in lowered:
         raise ScanError("This does not appear to be a complete Kometa log file.")
 
-    scanner = _new_scanner()
-    parsed = asyncio.run(scanner.parse_attachment_content(content_bytes))
-    header = scanner.extract_header_lines(parsed)
-    scanner.extract_last_lines(parsed)
-    detected_run_time = scanner.run_time
-    incomplete = "" if detected_run_time else "The log may be incomplete."
-
-    recommendations = scanner.make_recommendations(content, incomplete)
-    recommendations = scanner.reorder_recommendations(recommendations)
-    normalized = [
-        {
-            "title": _plain_title(
-                _strip_emojis(item.get("message", "").splitlines()[0] if item.get("message") else "")
-            ),
-            "message": _strip_emojis(item.get("message", "")).lstrip(),
-            "severity": _severity(item.get("first_line", "")),
-        }
-        for item in recommendations
-    ]
-    normalized.sort(key=lambda item: {"critical": 0, "warning": 1, "advice": 2}[item["severity"]])
+    version_match = re.search(r"\bVersion:\s*([^|\r\n]+)", content)
+    kometa_version = version_match.group(1).strip() if version_match else None
+    run_match = re.search(r"\bFinished:.*?\bRun Time:\s*([^|\r\n]+)", content)
+    detected_run_time = run_match.group(1).strip() if run_match else None
+    context = ScanContext.from_content(
+        filename,
+        content,
+        kometa_version=kometa_version,
+        run_time=detected_run_time,
+        complete=detected_run_time is not None,
+    )
+    registry = RuleRegistry()
+    for rule in migrated_rules():
+        registry.register(rule)
+    normalized = [finding.as_dict() for finding in registry.evaluate(context)]
+    normalized.sort(key=lambda item: {"critical": 0, "error": 1, "warning": 2, "schema": 3, "advice": 4}[item["severity"]])
 
     metadata = {
-        "kometa_version": scanner.current_kometa_version,
+        "kometa_version": kometa_version,
         "run_time": str(detected_run_time) if detected_run_time else None,
         "complete": detected_run_time is not None,
-        "header_found": bool(header),
+        "header_found": kometa_version is not None,
         "line_count": len(content.splitlines()),
         "size_bytes": len(content_bytes),
         "counts": {
             level: sum(item["severity"] == level for item in normalized)
-            for level in ("critical", "warning", "advice")
+            for level in ("critical", "warning", "schema", "advice")
         },
     }
-    return ScanResult(filename=filename, recommendations=normalized, metadata=metadata)
+    return ScanResult(
+        filename=filename,
+        recommendations=normalized,
+        metadata=metadata,
+        overview=_log_overview(filename, content, kometa_version, detected_run_time, normalized),
+        categories=category_configuration(),
+    )
