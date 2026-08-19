@@ -1,5 +1,6 @@
 import hmac
 import hashlib
+import json
 import os
 import threading
 import time
@@ -18,12 +19,31 @@ RETENTION_SECONDS = 48 * 60 * 60
 CLEANUP_INTERVAL_SECONDS = 60 * 60
 
 
+def load_local_env() -> None:
+    """Load a local development .env without overriding real process settings."""
+    env_file = os.path.join(os.getcwd(), ".env")
+    try:
+        with open(env_file, encoding="utf-8") as handle:
+            for line in handle:
+                line = line.strip()
+                if not line or line.startswith("#") or "=" not in line:
+                    continue
+                key, value = line.split("=", 1)
+                key = key.strip()
+                if key and key.replace("_", "").isalnum():
+                    os.environ.setdefault(key, value.strip().strip("'\""))
+    except FileNotFoundError:
+        pass
+
+
 def create_app() -> Flask:
+    load_local_env()
     app = Flask(__name__)
     app.config["MAX_CONTENT_LENGTH"] = MAX_FILE_BYTES + (1024 * 1024)
     app.config["SCAN_STORE"] = os.environ.get("SCAN_STORE", "/data/scans")
     app.config["LOGSCAN_API_KEY"] = os.environ.get("LOGSCAN_API_KEY", "")
     app.config["TMDB_API_KEY"] = os.environ.get("TMDB_API_KEY", "")
+    app.config["DISCORD_PEOPLE_WEBHOOK_URL"] = os.environ.get("DISCORD_PEOPLE_WEBHOOK_URL", "")
     app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
     store = ScanStore(app.config["SCAN_STORE"])
     people_store = PeopleStore(app.config["SCAN_STORE"])
@@ -53,7 +73,7 @@ def create_app() -> Flask:
             tmdb_id = match.get("id") if match else None
             key_seed = str(tmdb_id) if tmdb_id else name.casefold()
             key = f"tmdb-{tmdb_id}" if tmdb_id else f"name-{hashlib.sha256(key_seed.encode()).hexdigest()[:16]}"
-            person = people_store.upsert({
+            person, is_new = people_store.upsert_with_status({
                 "key": key,
                 "name": match.get("name", name) if match else name,
                 "tmdb_id": tmdb_id,
@@ -63,8 +83,38 @@ def create_app() -> Flask:
                 "source_url": source_url,
             })
             person["people_url"] = url_for("person_page", person_key=person["key"], _external=True)
+            person["is_new"] = is_new
             saved.append(person)
         return saved
+
+    def notify_people_webhook(people: list[dict]) -> None:
+        """Notify Discord when the website creates a new people-backlog entry."""
+        webhook_url = app.config["DISCORD_PEOPLE_WEBHOOK_URL"]
+        if not webhook_url:
+            return
+        for person in people:
+            if not person.get("is_new"):
+                continue
+            message = (
+                f"Log Name: `{person['log_name']}`\n"
+                f"Log Url: [Click Here]({person['log_url']})\n"
+                "Log Source: Not available\n"
+                f"Person Found: {person['name']}\n"
+                f"TMDb Image Found: {'Yes' if person.get('tmdb_image_found') else 'No'}\n"
+                f"Link: [Click Here]({person['people_url']})"
+            )
+            try:
+                payload = json.dumps({"content": message, "flags": 4}).encode("utf-8")
+                webhook_request = Request(
+                    webhook_url,
+                    data=payload,
+                    headers={"Content-Type": "application/json"},
+                    method="POST",
+                )
+                with urlopen(webhook_request, timeout=10):
+                    pass
+            except (HTTPError, URLError, TimeoutError) as exc:
+                app.logger.warning("Unable to send missing-person Discord webhook: %s", exc)
 
     def cleanup_loop():
         while True:
@@ -134,6 +184,8 @@ def create_app() -> Flask:
             log_url=result_url,
             source_url=source_url,
         )
+        if not is_bot:
+            notify_people_webhook(missing_people)
         expires_at = int((datetime.now(UTC) + timedelta(seconds=RETENTION_SECONDS)).timestamp())
         return jsonify(
             id=scan_id,
@@ -162,6 +214,20 @@ def create_app() -> Flask:
         if person is None:
             abort(404)
         images = []
+        if not person.get("tmdb_id"):
+            match_data = tmdb_get("/search/person", {"query": person["name"]})
+            matches = (match_data or {}).get("results", [])
+            exact = next(
+                (item for item in matches if item.get("name", "").casefold() == person["name"].casefold()),
+                None,
+            )
+            match = exact or (matches[0] if matches else None)
+            if match:
+                person = people_store.upsert({
+                    **person,
+                    "tmdb_id": match["id"],
+                    "name": match.get("name", person["name"]),
+                })
         if person.get("tmdb_id"):
             data = tmdb_get(f"/person/{person['tmdb_id']}/images", {"include_image_language": "en,null"})
             for image in (data or {}).get("profiles", []):

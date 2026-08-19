@@ -109,6 +109,9 @@ class PeopleStore:
         return next((person for person in self.list() if person["key"] == key), None)
 
     def upsert(self, person: dict) -> dict:
+        return self.upsert_with_status(person)[0]
+
+    def upsert_with_status(self, person: dict) -> tuple[dict, bool]:
         with self.lock:
             people = self._read()
             existing = next((item for item in people if item["key"] == person["key"]), None)
@@ -116,11 +119,13 @@ class PeopleStore:
                 existing.update({key: value for key, value in person.items() if value is not None})
                 existing["last_seen_at"] = datetime.now(UTC).isoformat()
                 result = existing
+                created = False
             else:
                 result = {**person, "created_at": datetime.now(UTC).isoformat(), "last_seen_at": datetime.now(UTC).isoformat()}
                 people.append(result)
+                created = True
             self._write(people)
-            return result.copy()
+            return result.copy(), created
 
     def delete(self, key: str) -> bool:
         with self.lock:

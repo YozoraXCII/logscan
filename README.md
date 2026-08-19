@@ -138,6 +138,11 @@ The cog sends one non-embedding notification per detected person to channel
 `1539665929330499664`, including the scan, original Discord message (where
 available), TMDb-image status, and the person page.
 
+For website uploads, set `DISCORD_PEOPLE_WEBHOOK_URL` to a webhook created in
+the destination Discord channel. A non-embedding notice is posted only when a
+person is first added to the backlog, preventing repeat notifications for the
+same person.
+
 ## Reverse proxy notes
 
 The application accepts uploads up to 100 MiB. Your reverse proxy must accept a

@@ -7,6 +7,8 @@ services:
     restart: unless-stopped
     environment:
       LOGSCAN_API_KEY: "${LOGSCAN_API_KEY}"
+      TMDB_API_KEY: "${TMDB_API_KEY}"
+      DISCORD_PEOPLE_WEBHOOK_URL: "${DISCORD_PEOPLE_WEBHOOK_URL}"
       SCAN_STORE: /data/scans
     networks:
       - saltbox
