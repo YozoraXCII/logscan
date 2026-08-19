@@ -83,6 +83,12 @@ button { cursor: pointer; }
 .image-download:hover { background: var(--accent); }
 .image-download svg { width: 17px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 .no-image { min-height: 140px; display: grid; place-items: center; padding: 16px; border: 1px dashed var(--border); border-radius: 9px; color: var(--muted); text-align: center; }
+.upload-image-tile { min-height: 140px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 9px; padding: 16px; border: 1px dashed rgba(148,151,255,.55); border-radius: 9px; color: #dfe2ff; background: rgba(114,119,248,.08); text-align: center; text-decoration: none; }
+.upload-image-tile:hover { border-color: var(--accent-bright); background: rgba(114,119,248,.16); }
+.upload-image-tile strong { font-size: .9rem; }
+.upload-image-tile span { color: var(--muted); font-size: .78rem; }
+.inline-plus-icon { display: inline-block; width: .95rem; height: .95rem; margin: 0 .1rem; vertical-align: -.15rem; fill: none; stroke: var(--accent-bright); stroke-width: 2; stroke-linecap: round; }
+.person-card p a, .person-detail .hero-copy a { color: var(--accent-bright); }
 .person-actions { display: flex; justify-content: flex-end; }
 
 .shell { width: min(1040px, calc(100% - 40px)); margin: 0 auto; }
