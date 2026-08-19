@@ -40,6 +40,12 @@ function displayValue(value) {
   return value || "Not found in this log";
 }
 
+function formatOverviewTimestamp(unixTimestamp) {
+  const date = new Date(unixTimestamp * 1000);
+  const part = (value) => String(value).padStart(2, "0");
+  return `${date.getFullYear()}-${part(date.getMonth() + 1)}-${part(date.getDate())} ${part(date.getHours())}:${part(date.getMinutes())}:${part(date.getSeconds())}`;
+}
+
 function showOverview(group, overview) {
   document.querySelectorAll(".nav-button").forEach((button) => {
     button.classList.toggle("active", button.dataset.group === group.key);
@@ -61,6 +67,7 @@ function showOverview(group, overview) {
     ["End time", overview.finished],
     ["Run time", overview.run_time],
     ["YAML validation", overview.yaml_validation],
+    ["Log Auto-Delete", overview.auto_delete],
   ];
   const grid = document.createElement("dl");
   grid.className = "overview-grid";
@@ -469,7 +476,11 @@ function summaryCard(label, value, small = false) {
 }
 
 function renderResults(data) {
+  updateRetentionCountdown(data);
   const { metadata, recommendations, overview = {}, categories = defaultGroups } = data;
+  if (data.expires_at) {
+    overview.auto_delete = formatOverviewTimestamp(data.expires_at);
+  }
   const groups = [...categories].sort((left, right) => left.priority - right.priority);
   document.querySelector("#results-title").textContent = data.filename;
   if (summaryGrid) summaryGrid.replaceChildren(
@@ -614,6 +625,24 @@ logCode.addEventListener("scroll", () => {
 });
 
 const initialScan = JSON.parse(document.querySelector("#initial-scan").textContent);
+const retentionCountdown = document.querySelector("#retention-countdown");
+let retentionTimer;
+
+function updateRetentionCountdown(scan) {
+  if (!retentionCountdown || !scan?.expires_at) return;
+  clearInterval(retentionTimer);
+  const render = () => {
+    const remainingMinutes = Math.max(0, Math.ceil((scan.expires_at * 1000 - Date.now()) / 60000));
+    const hours = Math.floor(remainingMinutes / 60);
+    const minutes = remainingMinutes % 60;
+    retentionCountdown.textContent = remainingMinutes
+      ? `This log file will be automatically deleted in ${hours} hour${hours === 1 ? "" : "s"} and ${minutes} minute${minutes === 1 ? "" : "s"}.`
+      : "This log file is scheduled for deletion.";
+  };
+  render();
+  retentionTimer = setInterval(render, 30000);
+}
+
 if (initialScan) {
   currentScanId = initialScan.id;
   const fragment = new URLSearchParams(location.hash.slice(1));

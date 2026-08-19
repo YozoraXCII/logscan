@@ -48,6 +48,7 @@ def create_app() -> Flask:
         if record is None:
             abort(404)
         public = {key: value for key, value in record.items() if key != "delete_token_hash"}
+        public["expires_at"] = int(datetime.fromisoformat(record["created_at"]).timestamp() + RETENTION_SECONDS)
         return render_template("index.html", initial_scan=public)
 
     @app.post("/api/scan")
