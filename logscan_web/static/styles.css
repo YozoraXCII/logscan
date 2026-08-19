@@ -191,6 +191,7 @@ details[open] .chevron { transform: rotate(90deg); }
 .viewer-header h2 { max-width: min(70vw, 900px); overflow: hidden; font-size: 1.35rem; text-overflow: ellipsis; white-space: nowrap; }
 .icon-button { width: 38px; height: 38px; border: 1px solid var(--border); border-radius: 9px; background: var(--surface-strong); color: var(--muted); font-size: 1.6rem; line-height: 1; }
 .icon-button:hover { color: white; }
+.viewer-header #download-config { height: 38px; padding: 0 12px; display: inline-flex; align-items: center; border-radius: 9px; font-size: .8rem; }
 .viewer-toolbar { min-height: 66px; padding: 10px 18px 10px 24px; display: flex; align-items: center; justify-content: space-between; gap: 20px; border-bottom: 1px solid var(--border); background: #0e1222; }
 .viewer-controls, .viewer-toolbar form, .section-jump-control { display: flex; align-items: center; gap: 9px; }
 .viewer-controls { gap: 22px; }
@@ -207,6 +208,10 @@ details[open] .chevron { transform: rotate(90deg); }
 .log-line:hover { background: rgba(255,255,255,.025); }
 .log-line.highlighted { border-left-color: var(--warning); background: rgba(251,191,36,.1); color: #f3f5ff; }
 .line-number { padding-right: 14px; color: #59627e; text-align: right; user-select: none; }
+.yaml-key { color: #c792ea; }
+.yaml-value { color: #c3e88d; }
+.yaml-literal { color: #82aaff; }
+.yaml-comment { color: #66708d; font-style: italic; }
 .highlighted .line-number { color: #f5c84d; }
 
 footer { width: min(1040px, calc(100% - 40px)); margin: 100px auto 0; padding: 28px 0 40px; display: flex; justify-content: space-between; gap: 20px; border-top: 1px solid var(--border); color: #737c99; font-size: .76rem; }

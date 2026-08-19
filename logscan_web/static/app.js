@@ -9,7 +9,9 @@ const summaryGrid = document.querySelector("#summary-grid");
 const sectionNav = document.querySelector("#section-nav");
 const sectionContent = document.querySelector("#section-content");
 const logViewer = document.querySelector("#log-viewer");
+const configViewer = document.querySelector("#config-viewer");
 const logCode = document.querySelector("#log-code");
+const configCode = document.querySelector("#config-code");
 const lineJump = document.querySelector("#line-jump");
 const sectionJump = document.querySelector("#section-jump");
 const viewerPosition = document.querySelector("#viewer-position");
@@ -22,6 +24,7 @@ let highlightedRange = { start: 1, end: 1 };
 let viewerFirstLine = 1;
 let viewerLastLine = 1;
 let loadingViewerChunk = false;
+let extractedConfig = "";
 const VIEWER_CHUNK_SIZE = 1000;
 
 const defaultGroups = [
@@ -229,6 +232,77 @@ function findLogSections(lines) {
     if (title) sections.push({ title, line: index + 1 });
   }
   return sections;
+}
+
+function extractConfig(lines) {
+  let started = false;
+  const extracted = [];
+  const taggedConfig = /\[config\.py:\d+\]\s+\[[A-Z]+\]\s*\|(.*)$/;
+  for (const line of lines) {
+    if (!started) {
+      if (line.includes("Redacted Config")) started = true;
+      continue;
+    }
+    if (line.includes("Config Warning:") || line.includes("Initializing cache database at")) break;
+    const match = taggedConfig.exec(line);
+    if (!match) break;
+    extracted.push(match[1].replace(/[ |]+$/, ""));
+  }
+  if (extracted.length > 1) extracted.pop();
+  return extracted.map((line) => line.startsWith(" ") ? line.slice(1) : line).join("\n");
+}
+
+function createConfigRows(config) {
+  const fragment = document.createDocumentFragment();
+  config.split("\n").forEach((line, index) => {
+    const row = document.createElement("div");
+    row.className = "log-line";
+    const number = document.createElement("span");
+    number.className = "line-number";
+    number.textContent = index + 1;
+    const content = document.createElement("span");
+    appendYamlHighlight(content, line || " ");
+    row.append(number, content);
+    fragment.append(row);
+  });
+  return fragment;
+}
+
+function appendYamlHighlight(container, line) {
+  const commentIndex = line.search(/\s#/);
+  const code = commentIndex === -1 ? line : line.slice(0, commentIndex);
+  const comment = commentIndex === -1 ? "" : line.slice(commentIndex);
+  const keyMatch = /^(\s*)([^:#][^:]*)(:)(.*)$/.exec(code);
+  if (keyMatch) {
+    container.append(document.createTextNode(keyMatch[1]));
+    const key = document.createElement("span");
+    key.className = "yaml-key";
+    key.textContent = keyMatch[2];
+    container.append(key, document.createTextNode(keyMatch[3]));
+    const value = document.createElement("span");
+    value.className = /^(\s*)(true|false|null|~)$/i.test(keyMatch[4]) ? "yaml-literal" : "yaml-value";
+    value.textContent = keyMatch[4];
+    container.append(value);
+  } else {
+    container.append(document.createTextNode(code));
+  }
+  if (comment) {
+    const commentNode = document.createElement("span");
+    commentNode.className = "yaml-comment";
+    commentNode.textContent = comment;
+    container.append(commentNode);
+  }
+}
+
+async function openConfigViewer() {
+  const lines = await loadLogLines();
+  extractedConfig = extractConfig(lines);
+  configCode.replaceChildren(
+    extractedConfig
+      ? createConfigRows(extractedConfig)
+      : document.createTextNode("No redacted config block was found in this log."),
+  );
+  configViewer.showModal();
 }
 
 function populateSectionJump() {
@@ -493,6 +567,16 @@ document.querySelector("#new-scan").addEventListener("click", () => {
 });
 
 document.querySelector("#view-log").addEventListener("click", () => openLogViewer(1));
+document.querySelector("#view-config").addEventListener("click", () => openConfigViewer().catch((error) => alert(error.message)));
+document.querySelector("#close-config").addEventListener("click", () => configViewer.close());
+document.querySelector("#download-config").addEventListener("click", () => {
+  if (!extractedConfig) return;
+  const link = document.createElement("a");
+  link.href = URL.createObjectURL(new Blob([extractedConfig], { type: "text/yaml;charset=utf-8" }));
+  link.download = "config-extract.yml";
+  link.click();
+  URL.revokeObjectURL(link.href);
+});
 document.querySelector("#delete-scan").addEventListener("click", async () => {
   if (!currentScanId || !deleteToken || !confirm("Permanently delete this log and its scan results?")) return;
   const response = await fetch(`/api/scans/${encodeURIComponent(currentScanId)}`, {
@@ -517,6 +601,9 @@ sectionJump.addEventListener("change", () => {
 });
 logViewer.addEventListener("click", (event) => {
   if (event.target === logViewer) logViewer.close();
+});
+configViewer.addEventListener("click", (event) => {
+  if (event.target === configViewer) configViewer.close();
 });
 logCode.addEventListener("scroll", () => {
   if (logCode.scrollTop + logCode.clientHeight >= logCode.scrollHeight - 240) {

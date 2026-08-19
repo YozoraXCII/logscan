@@ -59,6 +59,7 @@
         </div>
         <div class="results-actions">
           <button class="secondary-button" id="view-log" type="button">View log</button>
+          <button class="secondary-button" id="view-config" type="button">View config</button>
           <button class="danger-button" id="delete-scan" type="button" hidden>Delete log</button>
           <button class="secondary-button" id="new-scan" type="button">Scan another file</button>
         </div>
@@ -97,6 +98,12 @@
         <p id="viewer-position">Lines 1–1</p>
       </div>
       <div class="log-code" id="log-code" tabindex="0" aria-label="Log contents"></div>
+    </div>
+  </dialog>
+  <dialog class="log-viewer" id="config-viewer">
+    <div class="viewer-shell">
+      <header class="viewer-header"><div><p class="eyebrow">Extracted configuration</p><h2>config.yml</h2></div><div class="results-actions"><button class="secondary-button" id="download-config" type="button">Download config extract</button><button class="icon-button" id="close-config" type="button" aria-label="Close config viewer">×</button></div></header>
+      <pre class="log-code" id="config-code" tabindex="0" aria-label="Extracted configuration"></pre>
     </div>
   </dialog>
 
