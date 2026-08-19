@@ -1,5 +1,7 @@
+import gzip
 import re
 import tempfile
+import tarfile
 import zipfile
 from dataclasses import dataclass
 from io import BytesIO
@@ -22,13 +24,16 @@ class ScanError(ValueError):
     pass
 
 
-def _validate_archive_names(names: list[str]) -> list[str]:
+def _validate_archive_names(
+    names: list[str],
+    unexpected_contents_error: str = ZIP_UNEXPECTED_CONTENTS_ERROR,
+) -> list[str]:
     files = []
     for name in names:
         path = PurePosixPath(name.replace("\\", "/"))
         if not name.endswith(("/", "\\")):
             if path.is_absolute() or ".." in path.parts or path.suffix.lower() not in ALLOWED_SUFFIXES:
-                raise ScanError(ZIP_UNEXPECTED_CONTENTS_ERROR)
+                raise ScanError(unexpected_contents_error)
             files.append(name)
     if not files:
         raise ScanError("The archive does not contain any files to scan.")
@@ -110,6 +115,54 @@ def _extract_rar(filename: str, content_bytes: bytes) -> tuple[str, bytes]:
     return f"{Path(filename).stem}.log", extracted
 
 
+def _extract_tar(filename: str, content_bytes: bytes) -> tuple[str, bytes]:
+    unexpected_contents_error = "The TAR contained unexpected contents and was not scanned."
+    try:
+        with tarfile.open(fileobj=BytesIO(content_bytes), mode="r:*") as archive:
+            members = archive.getmembers()
+            files = [member for member in members if member.isfile()]
+            if len(files) != len([member for member in members if not member.isdir()]):
+                raise ScanError(unexpected_contents_error)
+            names = _validate_archive_names(
+                [member.name for member in files],
+                unexpected_contents_error,
+            )
+            if sum(member.size for member in files) > MAX_FILE_BYTES:
+                raise ScanError("The extracted TAR contents are larger than the 100 MB limit.")
+            extracted_files = []
+            extracted_size = 0
+            for name in names:
+                member = archive.getmember(name)
+                source = archive.extractfile(member)
+                if source is None:
+                    raise ScanError("The TAR archive could not be extracted.")
+                with source:
+                    extracted_file = source.read(MAX_FILE_BYTES - extracted_size + 1)
+                extracted_size += len(extracted_file)
+                if extracted_size > MAX_FILE_BYTES:
+                    raise ScanError("The extracted TAR contents are larger than the 100 MB limit.")
+                extracted_files.append(extracted_file)
+            extracted = b"\n\n".join(extracted_files)
+    except tarfile.TarError as exc:
+        raise ScanError("The selected TAR file is invalid.") from exc
+    if not extracted:
+        raise ScanError("The archive does not contain any text to scan.")
+    return f"{Path(filename).stem}.log", extracted
+
+
+def _extract_gzip(filename: str, content_bytes: bytes) -> tuple[str, bytes]:
+    try:
+        with gzip.GzipFile(fileobj=BytesIO(content_bytes), mode="rb") as archive:
+            extracted = archive.read(MAX_FILE_BYTES + 1)
+    except (gzip.BadGzipFile, EOFError, OSError) as exc:
+        raise ScanError("The selected GZIP file is invalid.") from exc
+    if not extracted:
+        raise ScanError("The GZIP file does not contain any text to scan.")
+    if len(extracted) > MAX_FILE_BYTES:
+        raise ScanError("The extracted GZIP contents are larger than the 100 MB limit.")
+    return f"{Path(filename).stem}.log", extracted
+
+
 def prepare_scan_input(filename: str, content_bytes: bytes) -> tuple[str, bytes]:
     """Validate an upload and return the text that should be stored and scanned."""
     suffix = Path(filename).suffix.lower()
@@ -119,8 +172,12 @@ def prepare_scan_input(filename: str, content_bytes: bytes) -> tuple[str, bytes]
         return _extract_7z(filename, content_bytes)
     if suffix == ".rar":
         return _extract_rar(filename, content_bytes)
+    if filename.lower().endswith((".tar.gz", ".tgz", ".tar")):
+        return _extract_tar(filename, content_bytes)
+    if suffix == ".gz":
+        return _extract_gzip(filename, content_bytes)
     if suffix not in ALLOWED_SUFFIXES and not suffix.lstrip(".").isdigit():
-        raise ScanError("Choose a Kometa .log, .txt, .yml, .yaml, .zip, .rar, or .7z file.")
+        raise ScanError("Choose a Kometa log, text, YAML, ZIP, RAR, 7z, TAR, or GZIP file.")
     return filename, content_bytes
 
 
