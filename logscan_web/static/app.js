@@ -70,8 +70,7 @@ function showOverview(group, overview) {
   sectionContent.append(header);
   const details = [
     ["Log name", overview.log_name],
-    ...(overview.uploaded_by ? [["Uploaded by", `${overview.uploaded_by} (ID: ${overview.uploaded_by_id})`]] : []),
-    ...(overview.message_url ? [["Message Link", overview.message_url]] : []),
+    ...(overview.uploaded_by ? [["Log Info", { uploader: overview.uploaded_by, id: overview.uploaded_by_id, messageUrl: overview.message_url }]] : []),
     ["Number of recommendations", overview.recommendation_count],
     ["Kometa version", overview.kometa_version],
     ["Platform", overview.platform],
@@ -91,11 +90,12 @@ function showOverview(group, overview) {
     const term = document.createElement("dt");
     const definition = document.createElement("dd");
     term.textContent = label;
-    if (label === "Message Link" && value) {
+    if (label === "Log Info") {
+      definition.append(`Uploader: ${value.uploader} (ID: ${value.id})`, document.createElement("br"));
       const link = document.createElement("a");
-      link.href = value;
+      link.href = value.messageUrl;
       link.textContent = "Click Here";
-      definition.append(link);
+      definition.append("Discord Message: ", link);
     } else {
       definition.textContent = displayValue(value);
     }
