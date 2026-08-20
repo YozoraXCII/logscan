@@ -177,6 +177,20 @@ def create_app() -> Flask:
         public["expires_at"] = int(datetime.fromisoformat(record["created_at"]).timestamp() + RETENTION_SECONDS)
         return render_template("index.html", initial_scan=public)
 
+    @app.get("/batch/<batch_id>")
+    def batch_page(batch_id):
+        batch = store.get_batch(batch_id)
+        if batch is None:
+            abort(404)
+        return render_template("batch.html", scans=batch["scans"], admin=False)
+
+    @app.get("/batch/<batch_id>/admin/<token>")
+    def batch_admin_page(batch_id, token):
+        batch = store.get_batch(batch_id, token)
+        if batch is None:
+            abort(404)
+        return render_template("batch.html", scans=batch["scans"], admin=True)
+
     def bot_request_is_authorized() -> bool:
         configured_key = app.config["LOGSCAN_API_KEY"]
         supplied = request.headers.get("Authorization", "").removeprefix("Bearer ")
@@ -223,7 +237,10 @@ def create_app() -> Flask:
             payloads.append({"id": scan_id, "filename": result.filename, "recommendations": result.recommendations, "metadata": result.metadata, "overview": result.overview, "categories": result.categories, "result_url": result_url, "delete_token": delete_token, "expires_at": expires_at, "uploaded_by_bot": is_bot, "missing_people": missing_people})
         if not is_bot:
             notify_people_webhook([person for payload in payloads for person in payload["missing_people"]])
-        return jsonify(scans=payloads) if request.path == "/api/bot/scan" else jsonify(payloads[0])
+        if request.path == "/api/bot/scan":
+            batch_id, admin_token = store.create_batch(payloads)
+            return jsonify(scans=payloads, batch_result_url=url_for("batch_page", batch_id=batch_id, _external=True), batch_admin_url=url_for("batch_admin_page", batch_id=batch_id, token=admin_token, _external=True))
+        return jsonify(payloads[0])
 
     @app.get("/api/people")
     def people():

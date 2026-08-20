@@ -5,6 +5,8 @@ const filePill = document.querySelector("#file-pill");
 const status = document.querySelector("#form-status");
 const scanButton = document.querySelector("#scan-button");
 const results = document.querySelector("#results");
+const retentionCountdown = document.querySelector("#retention-countdown");
+let retentionTimer;
 const batchResults = document.querySelector("#batch-results");
 const batchResultLinks = document.querySelector("#batch-result-links");
 const copyBatchResults = document.querySelector("#copy-batch-results");
@@ -694,8 +696,6 @@ logCode.addEventListener("scroll", () => {
 });
 
 const initialScan = JSON.parse(document.querySelector("#initial-scan").textContent);
-const retentionCountdown = document.querySelector("#retention-countdown");
-let retentionTimer;
 
 function updateRetentionCountdown(scan) {
   if (!retentionCountdown || !scan?.expires_at) return;
