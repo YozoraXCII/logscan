@@ -12,7 +12,7 @@ from urllib.request import Request, urlopen
 from flask import Flask, abort, jsonify, render_template, request, send_file, url_for
 from werkzeug.middleware.proxy_fix import ProxyFix
 
-from .scanner import MAX_FILE_BYTES, ScanError, extract_missing_people, prepare_scan_input, scan_archive_logs, scan_log
+from .scanner import MAX_FILE_BYTES, ScanError, extract_missing_people, find_scannable_archive_logs, prepare_scan_input, scan_archive_logs, scan_log
 from .storage import PeopleStore, ScanStore
 
 RETENTION_SECONDS = 48 * 60 * 60
@@ -218,10 +218,10 @@ def create_app() -> Flask:
         if upload is None or not upload.filename:
             return jsonify(error="Choose a log file to scan."), 400
         try:
-            scans = scan_archive_logs(upload.filename, upload.read())
+            files = find_scannable_archive_logs(upload.filename, upload.read())
         except ScanError as exc:
             return jsonify(error=str(exc)), 400
-        return jsonify(files=[{"filename": filename, "content_size": len(content)} for filename, content, _result in scans])
+        return jsonify(files=[{"filename": filename, "content_size": size} for filename, size in files])
 
     @app.post("/api/scan")
     @app.post("/api/bot/scan")

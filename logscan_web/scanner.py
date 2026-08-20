@@ -63,12 +63,16 @@ def _validate_archive_names(
     unexpected_contents_error: str = ZIP_UNEXPECTED_CONTENTS_ERROR,
 ) -> list[str]:
     files = []
+    unexpected = []
     for name in names:
         path = PurePosixPath(name.replace("\\", "/"))
         if not name.endswith(("/", "\\")):
             if path.is_absolute() or ".." in path.parts or path.suffix.lower() not in ALLOWED_SUFFIXES | ARCHIVE_SUFFIXES:
-                raise ScanError(unexpected_contents_error)
+                unexpected.append(name)
+                continue
             files.append(name)
+    if unexpected:
+        raise ScanError(f"{unexpected_contents_error} Unexpected files: {', '.join(unexpected)}")
     if not files:
         raise ScanError("The archive does not contain any files to scan.")
     return files
@@ -419,3 +423,28 @@ def scan_archive_logs(filename: str, content_bytes: bytes) -> list[tuple[str, by
     if not scans:
         raise ScanError("The archive does not contain a complete Kometa log file.")
     return scans
+
+
+def find_scannable_archive_logs(filename: str, content_bytes: bytes) -> list[tuple[str, int]]:
+    """Permissively identify Kometa logs before the strict scan validates every entry."""
+    if Path(filename).suffix.lower() != ".zip":
+        result = scan_log(filename, content_bytes)
+        return [(result.filename, len(content_bytes))]
+    try:
+        with zipfile.ZipFile(BytesIO(content_bytes)) as archive:
+            found = []
+            for entry in archive.infolist():
+                if entry.is_dir() or Path(entry.filename).suffix.lower() not in ALLOWED_SUFFIXES:
+                    continue
+                with archive.open(entry) as member:
+                    content = member.read()
+                try:
+                    result = scan_log(entry.filename, content)
+                except ScanError:
+                    continue
+                found.append((result.filename, len(content)))
+            if found:
+                return found
+    except zipfile.BadZipFile as exc:
+        raise ScanError("The selected ZIP file is invalid.") from exc
+    raise ScanError("The archive does not contain a complete Kometa log file.")
