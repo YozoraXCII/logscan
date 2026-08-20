@@ -70,6 +70,7 @@ function showOverview(group, overview) {
   sectionContent.append(header);
   const details = [
     ["Log name", overview.log_name],
+    ...(overview.uploaded_by ? [["Uploaded by", overview.uploaded_by]] : []),
     ["Number of recommendations", overview.recommendation_count],
     ["Kometa version", overview.kometa_version],
     ["Platform", overview.platform],
