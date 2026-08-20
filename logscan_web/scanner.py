@@ -1,14 +1,10 @@
 import gzip
 import re
-import tempfile
 import tarfile
 import zipfile
 from dataclasses import dataclass
 from io import BytesIO
 from pathlib import Path, PurePosixPath
-
-import py7zr
-import rarfile
 
 from .models import ScanContext
 from .rules import RuleRegistry, migrated_rules
@@ -18,8 +14,7 @@ from .categories import category_configuration
 MAX_FILE_BYTES = 500 * 1024 * 1024
 MAX_ARCHIVE_DEPTH = 3
 ALLOWED_SUFFIXES = {".txt", ".log", ".yml", ".yaml"}
-ARCHIVE_SUFFIXES = {".zip", ".rar", ".7z", ".tar", ".tgz", ".gz"}
-ZIP_UNEXPECTED_CONTENTS_ERROR = "The ZIP contained unexpected contents and was not scanned."
+ARCHIVE_SUFFIXES = {".zip", ".tar", ".tgz", ".gz"}
 
 
 class ScanError(ValueError):
@@ -58,39 +53,17 @@ def extract_missing_people(content: str) -> list[dict[str, str | bool]]:
     ]
 
 
-def _validate_archive_names(
-    names: list[str],
-    unexpected_contents_error: str = ZIP_UNEXPECTED_CONTENTS_ERROR,
-) -> list[str]:
+def _validate_archive_names(names: list[str]) -> list[str]:
+    """Return safe, scannable archive members and ignore everything else."""
     files = []
-    unexpected = []
     for name in names:
         path = PurePosixPath(name.replace("\\", "/"))
         if not name.endswith(("/", "\\")):
-            if path.is_absolute() or ".." in path.parts or path.suffix.lower() not in ALLOWED_SUFFIXES | ARCHIVE_SUFFIXES:
-                unexpected.append(name)
-                continue
-            files.append(name)
-    if unexpected:
-        raise ScanError(f"{unexpected_contents_error} Unexpected files: {', '.join(unexpected)}")
+            if not path.is_absolute() and ".." not in path.parts and path.suffix.lower() in ALLOWED_SUFFIXES | ARCHIVE_SUFFIXES:
+                files.append(name)
     if not files:
         raise ScanError("The archive does not contain any files to scan.")
     return files
-
-
-def _combine_extracted_files(root: Path, names: list[str], archive_depth: int) -> bytes:
-    extracted_files: list[tuple[str, bytes]] = []
-    extracted_size = 0
-    for name in names:
-        path = root.joinpath(*PurePosixPath(name.replace("\\", "/")).parts)
-        if not path.is_file():
-            raise ScanError("The archive could not be extracted.")
-        extracted_file = path.read_bytes()
-        extracted_size += len(extracted_file)
-        if extracted_size > MAX_FILE_BYTES:
-            raise ScanError("The extracted archive contents are larger than the 500 MB limit.")
-        extracted_files.append((name, extracted_file))
-    return _combine_nested_files(extracted_files, archive_depth)
 
 
 def _combine_nested_files(files: list[tuple[str, bytes]], archive_depth: int) -> bytes:
@@ -132,57 +105,20 @@ def _extract_zip(filename: str, content_bytes: bytes, archive_depth: int) -> tup
     return f"{Path(filename).stem}.log", extracted
 
 
-def _extract_7z(filename: str, content_bytes: bytes, archive_depth: int) -> tuple[str, bytes]:
-    try:
-        with py7zr.SevenZipFile(BytesIO(content_bytes), mode="r") as archive:
-            if archive.needs_password():
-                raise ScanError("The 7z archive is encrypted and cannot be scanned.")
-            files = _validate_archive_names(archive.getnames())
-            with tempfile.TemporaryDirectory() as directory:
-                archive.extract(path=directory, targets=files)
-                extracted = _combine_extracted_files(Path(directory), files, archive_depth)
-    except py7zr.Bad7zFile as exc:
-        raise ScanError("The selected 7z file is invalid.") from exc
-    if not extracted:
-        raise ScanError("The archive does not contain any text to scan.")
-    return f"{Path(filename).stem}.log", extracted
-
-
-def _extract_rar(filename: str, content_bytes: bytes, archive_depth: int) -> tuple[str, bytes]:
-    try:
-        with rarfile.RarFile(BytesIO(content_bytes)) as archive:
-            infos = [info for info in archive.infolist() if not info.isdir()]
-            files = _validate_archive_names([info.filename for info in infos])
-            if any(info.needs_password() for info in infos):
-                raise ScanError("The RAR archive is encrypted and cannot be scanned.")
-            if sum(info.file_size for info in infos) > MAX_FILE_BYTES:
-                raise ScanError("The extracted archive contents are larger than the 500 MB limit.")
-            extracted = _combine_nested_files([(name, archive.read(name)) for name in files], archive_depth)
-    except rarfile.Error as exc:
-        raise ScanError("The selected RAR file is invalid or cannot be extracted.") from exc
-    if not extracted:
-        raise ScanError("The archive does not contain any text to scan.")
-    return f"{Path(filename).stem}.log", extracted
-
-
 def _extract_tar(filename: str, content_bytes: bytes, archive_depth: int) -> tuple[str, bytes]:
-    unexpected_contents_error = "The TAR contained unexpected contents and was not scanned."
     try:
         with tarfile.open(fileobj=BytesIO(content_bytes), mode="r:*") as archive:
             members = archive.getmembers()
             files = [member for member in members if member.isfile()]
-            if len(files) != len([member for member in members if not member.isdir()]):
-                raise ScanError(unexpected_contents_error)
-            names = _validate_archive_names(
-                [member.name for member in files],
-                unexpected_contents_error,
-            )
-            if sum(member.size for member in files) > MAX_FILE_BYTES:
+            names = _validate_archive_names([member.name for member in files])
+            members_by_name = {member.name: member for member in files}
+            scannable_members = [members_by_name[name] for name in names]
+            if sum(member.size for member in scannable_members) > MAX_FILE_BYTES:
                 raise ScanError("The extracted TAR contents are larger than the 500 MB limit.")
             extracted_files = []
             extracted_size = 0
             for name in names:
-                member = archive.getmember(name)
+                member = members_by_name[name]
                 source = archive.extractfile(member)
                 if source is None:
                     raise ScanError("The TAR archive could not be extracted.")
@@ -222,16 +158,12 @@ def prepare_scan_input(filename: str, content_bytes: bytes, archive_depth: int =
             raise ScanError("Archives may be nested no more than three levels deep.")
     if suffix == ".zip":
         return _extract_zip(filename, content_bytes, archive_depth + 1)
-    if suffix == ".7z":
-        return _extract_7z(filename, content_bytes, archive_depth + 1)
-    if suffix == ".rar":
-        return _extract_rar(filename, content_bytes, archive_depth + 1)
     if filename.lower().endswith((".tar.gz", ".tgz", ".tar")):
         return _extract_tar(filename, content_bytes, archive_depth + 1)
     if suffix == ".gz":
         return _extract_gzip(filename, content_bytes, archive_depth + 1)
     if suffix not in ALLOWED_SUFFIXES and not suffix.lstrip(".").isdigit():
-        raise ScanError("Choose a Kometa log, text, YAML, ZIP, RAR, 7z, TAR, or GZIP file.")
+        raise ScanError("Choose a Kometa log, text, YAML, ZIP, TAR, or GZIP file.")
     return filename, content_bytes
 
 
