@@ -98,7 +98,7 @@ function showOverview(group, overview) {
       definition.append("Uploader: ", uploader, document.createElement("br"));
       const link = document.createElement("a");
       const messageUrl = new URL(value.messageUrl);
-      link.href = `discord://-/channels${messageUrl.pathname}`;
+      link.href = `discord://-${messageUrl.pathname}`;
       link.textContent = "Click Here";
       link.title = "Open Discord message";
       definition.append("Discord Message: ", link);
