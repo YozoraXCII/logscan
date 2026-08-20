@@ -696,6 +696,7 @@ logCode.addEventListener("scroll", () => {
 });
 
 const initialScan = JSON.parse(document.querySelector("#initial-scan").textContent);
+const initialBatch = JSON.parse(document.querySelector("#initial-batch").textContent);
 
 function updateRetentionCountdown(scan) {
   if (!retentionCountdown || !scan?.expires_at) return;
@@ -717,4 +718,8 @@ if (initialScan) {
   const fragment = new URLSearchParams(location.hash.slice(1));
   deleteToken = fragment.get("delete");
   renderResults(initialScan);
+}
+if (initialBatch) {
+  batchScans = initialBatch;
+  renderBatchResults(batchScans);
 }
