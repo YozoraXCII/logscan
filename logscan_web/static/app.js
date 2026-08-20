@@ -671,6 +671,10 @@ document.querySelector("#delete-scan").addEventListener("click", async () => {
   }
   location.href = "/";
 });
+window.addEventListener("hashchange", () => {
+  deleteToken = new URLSearchParams(location.hash.slice(1)).get("delete");
+  document.querySelector("#delete-scan").hidden = !deleteToken;
+});
 document.querySelector("#close-viewer").addEventListener("click", () => logViewer.close());
 document.querySelector("#line-jump-form").addEventListener("submit", (event) => {
   event.preventDefault();
