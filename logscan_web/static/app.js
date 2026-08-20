@@ -499,7 +499,7 @@ function renderBatchResults(scans, admin = false) {
   scans.forEach((scan) => {
     const item = document.createElement("li");
     const link = document.createElement("a");
-    link.href = `/scan/${encodeURIComponent(scan.id)}`;
+    link.href = scan.result_url || `/scan/${encodeURIComponent(scan.id)}`;
     link.textContent = scan.filename;
     item.append(link);
     batchResultLinks.append(item);
@@ -508,6 +508,7 @@ function renderBatchResults(scans, admin = false) {
 }
 
 function renderResults(data) {
+  deleteToken = new URLSearchParams(location.hash.slice(1)).get("delete");
   updateRetentionCountdown(data);
   const { metadata, recommendations, overview = {}, categories = defaultGroups } = data;
   if (data.expires_at) {
@@ -548,7 +549,7 @@ function renderResults(data) {
   showOverview(groups[0], overview);
   results.hidden = false;
   currentScanId = data.id || currentScanId;
-  document.querySelector("#delete-scan").hidden = !new URLSearchParams(location.hash.slice(1)).get("delete");
+  document.querySelector("#delete-scan").hidden = !deleteToken;
   results.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
