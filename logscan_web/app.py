@@ -13,6 +13,7 @@ from urllib.request import Request, urlopen
 from flask import Flask, abort, jsonify, render_template, request, send_file, url_for
 from werkzeug.middleware.proxy_fix import ProxyFix
 
+from .models import Finding
 from .scanner import MAX_FILE_BYTES, ScanError, extract_missing_people, find_scannable_archive_logs, prepare_scan_input, scan_archive_logs, scan_log
 from .storage import PeopleStore, PopularPeopleCheckStore, PopularPeopleExclusionStore, PopularPeopleFlagStore, ScanStore
 
@@ -30,6 +31,41 @@ KOMETA_IMAGE_SOURCES = (
 KOMETA_IMAGE_CACHE_SECONDS = 60 * 60
 POPULAR_PEOPLE_CACHE_SECONDS = 60 * 60
 POPULAR_PEOPLE_CHECK_SECONDS = 30 * 24 * 60 * 60
+
+
+def add_missing_people_recommendations(result, candidates: list[dict], repository_people: dict[str, str]) -> None:
+    """Add advice for missing people images, split by repository availability."""
+    found = []
+    pending = []
+    for candidate in candidates:
+        name = candidate["name"]
+        (found if name.casefold() in repository_people else pending).append(name)
+
+    def add_advice(identifier: str, title: str, description: str, solution: str) -> None:
+        result.recommendations.append(Finding(identifier, "advice", title, description, solution).as_dict())
+
+    if found:
+        people = ", ".join(found)
+        add_advice(
+            "missing_people_images_available",
+            "Missing people images are available in Kometa's repository",
+            "Missing person images were identified in this log, but are already available in the Kometa People Images repository. "
+            f"\n\nPeople: {people}.",
+            "Delete the collection related to each listed person so Kometa can recreate it with the available image.",
+        )
+    if pending:
+        people = ", ".join(pending)
+        add_advice(
+            "missing_people_images_pending",
+            "Missing people images need to be created",
+            "Missing person images were identified in this log. The Kometa team have been made aware and will action these as soon as possible. "
+            f"\nPeople: {people}.",
+            "Wait for the People Images repository to be updated, then rerun Kometa to create the affected collection image.",
+        )
+    if found or pending:
+        result.recommendations.sort(key=lambda item: {"critical": 0, "error": 1, "warning": 2, "schema": 3, "advice": 4}[item["severity"]])
+        result.metadata["counts"]["advice"] = sum(item["severity"] == "advice" for item in result.recommendations)
+        result.overview["recommendation_count"] = len(result.recommendations)
 
 
 def load_local_env() -> None:
@@ -354,9 +390,14 @@ def create_app() -> Flask:
                 result.overview["uploaded_by"] = uploaded_by
                 result.overview["uploaded_by_id"] = uploaded_by_id
                 result.overview["message_url"] = source_url
+            missing_candidates = extract_missing_people(content.decode("utf-8", errors="replace"))
+            if missing_candidates:
+                repository_people = kometa_image_urls().get("Kometa Repo Image")
+                if repository_people is not None:
+                    add_missing_people_recommendations(result, missing_candidates, repository_people)
             scan_id, delete_token = store.create(filename, content, result)
             result_url = url_for("result_page", scan_id=scan_id, _external=True)
-            missing_people = save_missing_people(extract_missing_people(content.decode("utf-8", errors="replace")), filename=result.filename, log_url=result_url, source_url=source_url)
+            missing_people = save_missing_people(missing_candidates, filename=result.filename, log_url=result_url, source_url=source_url)
             payloads.append({"id": scan_id, "filename": result.filename, "recommendations": result.recommendations, "metadata": result.metadata, "overview": result.overview, "categories": result.categories, "result_url": result_url, "delete_token": delete_token, "expires_at": expires_at, "uploaded_by_bot": is_bot, "missing_people": missing_people})
         if not is_bot:
             notify_people_webhook([person for payload in payloads for person in payload["missing_people"]])
