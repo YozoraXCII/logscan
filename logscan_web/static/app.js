@@ -91,7 +91,11 @@ function showOverview(group, overview) {
     const definition = document.createElement("dd");
     term.textContent = label;
     if (label === "Log Info") {
-      definition.append(`Uploader: ${value.uploader} (ID: ${value.id})`, document.createElement("br"));
+      const uploader = document.createElement("a");
+      uploader.href = `discord://-/users/${value.id}`;
+      uploader.textContent = value.uploader;
+      uploader.title = "Open Discord profile";
+      definition.append("Uploader: ", uploader, document.createElement("br"));
       const link = document.createElement("a");
       link.href = value.messageUrl;
       link.textContent = "Click Here";
