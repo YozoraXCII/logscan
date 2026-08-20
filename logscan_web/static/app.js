@@ -70,7 +70,8 @@ function showOverview(group, overview) {
   sectionContent.append(header);
   const details = [
     ["Log name", overview.log_name],
-    ...(overview.uploaded_by ? [["Uploaded by", overview.uploaded_by]] : []),
+    ...(overview.uploaded_by ? [["Uploaded by", `${overview.uploaded_by} (ID: ${overview.uploaded_by_id})`]] : []),
+    ...(overview.message_url ? [["Message Link", overview.message_url]] : []),
     ["Number of recommendations", overview.recommendation_count],
     ["Kometa version", overview.kometa_version],
     ["Platform", overview.platform],
@@ -90,7 +91,14 @@ function showOverview(group, overview) {
     const term = document.createElement("dt");
     const definition = document.createElement("dd");
     term.textContent = label;
-    definition.textContent = displayValue(value);
+    if (label === "Message Link" && value) {
+      const link = document.createElement("a");
+      link.href = value;
+      link.textContent = "Click Here";
+      definition.append(link);
+    } else {
+      definition.textContent = displayValue(value);
+    }
     item.append(term, definition);
     grid.append(item);
   });

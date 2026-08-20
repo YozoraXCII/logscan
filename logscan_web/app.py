@@ -242,11 +242,14 @@ def create_app() -> Flask:
             return jsonify(error=str(exc)), 400
         source_url = request.form.get("source_url") if is_bot else None
         uploaded_by = request.form.get("uploaded_by") if is_bot else None
+        uploaded_by_id = request.form.get("uploaded_by_id") if is_bot else None
         expires_at = int((datetime.now(UTC) + timedelta(seconds=RETENTION_SECONDS)).timestamp())
         payloads = []
         for filename, content, result in scans:
             if uploaded_by:
                 result.overview["uploaded_by"] = uploaded_by
+                result.overview["uploaded_by_id"] = uploaded_by_id
+                result.overview["message_url"] = source_url
             scan_id, delete_token = store.create(filename, content, result)
             result_url = url_for("result_page", scan_id=scan_id, _external=True)
             missing_people = save_missing_people(extract_missing_people(content.decode("utf-8", errors="replace")), filename=result.filename, log_url=result_url, source_url=source_url)
@@ -254,8 +257,12 @@ def create_app() -> Flask:
         if not is_bot:
             notify_people_webhook([person for payload in payloads for person in payload["missing_people"]])
         if request.path == "/api/bot/scan":
-            batch_id, admin_token = store.create_batch(payloads)
-            return jsonify(scans=payloads, batch_result_url=url_for("batch_page", batch_id=batch_id, _external=True), batch_admin_url=url_for("batch_admin_page", batch_id=batch_id, token=admin_token, _external=True))
+            response = {"scans": payloads}
+            if len(payloads) > 1:
+                batch_id, admin_token = store.create_batch(payloads)
+                response["batch_result_url"] = url_for("batch_page", batch_id=batch_id, _external=True)
+                response["batch_admin_url"] = url_for("batch_admin_page", batch_id=batch_id, token=admin_token, _external=True)
+            return jsonify(response)
         return jsonify(payloads[0])
 
     @app.get("/api/people")
