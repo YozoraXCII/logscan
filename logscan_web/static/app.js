@@ -419,20 +419,7 @@ async function openLogViewer(targetStart = 1, targetEnd = targetStart) {
     if (!logViewer.open) logViewer.showModal();
     renderLogWindow(targetStart, targetEnd);
   } catch (error) {
-    const marker = "Unexpected files:";
-    if (error.message.includes(marker)) {
-      const [summary, names] = error.message.split(marker, 2);
-      status.textContent = summary.trim();
-      unexpectedFileList.replaceChildren(...names.split(",").map((name) => {
-        const item = document.createElement("li");
-        item.textContent = name.trim();
-        return item;
-      }));
-      uploadErrorDetails.hidden = false;
-    } else {
-      status.textContent = error.message;
-    }
-    status.classList.add("error");
+    alert(error.message);
   }
 }
 
@@ -616,7 +603,19 @@ form.addEventListener("submit", async (event) => {
     history.replaceState({}, "", `/scan/${encodeURIComponent(completed[0].id)}#delete=${encodeURIComponent(deleteToken)}`);
     renderResults(completed[0]);
   } catch (error) {
-    status.textContent = error.message;
+    const marker = "Unexpected files:";
+    if (error.message.includes(marker)) {
+      const [summary, names] = error.message.split(marker, 2);
+      status.textContent = summary.trim();
+      unexpectedFileList.replaceChildren(...names.split(",").map((name) => {
+        const item = document.createElement("li");
+        item.textContent = name.trim();
+        return item;
+      }));
+      uploadErrorDetails.hidden = false;
+    } else {
+      status.textContent = error.message;
+    }
     status.classList.add("error");
   } finally {
     dropZone.classList.remove("loading");
