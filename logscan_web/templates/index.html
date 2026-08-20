@@ -9,10 +9,10 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet">
   <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.7.2/css/all.min.css" rel="stylesheet">
-  <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='styles.css', v='20260820') }}">
   <script id="initial-scan" type="application/json">{{ initial_scan|tojson }}</script>
   <script id="initial-batch" type="application/json">{{ initial_batch|tojson }}</script>
-  <script src="{{ url_for('static', filename='app.js') }}" defer></script>
+  <script src="{{ url_for('static', filename='app.js', v='20260820') }}" defer></script>
 </head>
 <body>
   <div class="ambient ambient-one"></div>
@@ -56,7 +56,7 @@
     <section class="batch-results" id="batch-results" hidden aria-live="polite">
       <p class="eyebrow">Batch complete</p>
       <div class="batch-results-heading">
-        <h2>Uploaded scan results</h2>
+      <h2 id="batch-results-title">Uploaded scan results</h2>
         <button class="secondary-button icon-action" id="copy-batch-results" type="button" aria-label="Copy Markdown links" title="Copy Markdown links"><i class="fa-solid fa-copy" aria-hidden="true"></i></button>
       </div>
       <p>Each file was scanned separately.</p>

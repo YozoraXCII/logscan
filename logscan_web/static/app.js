@@ -9,6 +9,7 @@ const retentionCountdown = document.querySelector("#retention-countdown");
 let retentionTimer;
 const batchResults = document.querySelector("#batch-results");
 const batchResultLinks = document.querySelector("#batch-result-links");
+const batchResultsTitle = document.querySelector("#batch-results-title");
 const copyBatchResults = document.querySelector("#copy-batch-results");
 const getHelp = document.querySelector("#get-help");
 const helpDialog = document.querySelector("#help-dialog");
@@ -488,12 +489,13 @@ function summaryCard(label, value, small = false) {
   return card;
 }
 
-function renderBatchResults(scans) {
+function renderBatchResults(scans, admin = false) {
   if (!scans.length) {
     batchResults.hidden = true;
     return;
   }
   batchResultLinks.replaceChildren();
+  batchResultsTitle.textContent = admin ? "Private deletion links" : "Uploaded scan results";
   scans.forEach((scan) => {
     const item = document.createElement("li");
     const link = document.createElement("a");
@@ -721,5 +723,5 @@ if (initialScan) {
 }
 if (initialBatch) {
   batchScans = initialBatch;
-  renderBatchResults(batchScans);
+  renderBatchResults(batchScans, initialBatch.some((scan) => scan.result_url.includes("#delete=")));
 }

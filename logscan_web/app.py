@@ -193,7 +193,16 @@ def create_app() -> Flask:
         batch = store.get_batch(batch_id, token)
         if batch is None:
             abort(404)
-        return render_template("batch.html", scans=batch["scans"], admin=True)
+        admin_scans = [
+            {
+                "id": scan["id"],
+                "filename": scan["filename"],
+                "result_url": f"{scan['result_url']}#delete={scan['delete_token']}",
+                "expires_at": scan["expires_at"],
+            }
+            for scan in batch["scans"]
+        ]
+        return render_template("index.html", initial_scan=None, initial_batch=admin_scans)
 
     def bot_request_is_authorized() -> bool:
         configured_key = app.config["LOGSCAN_API_KEY"]
