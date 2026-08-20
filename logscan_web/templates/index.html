@@ -9,10 +9,10 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet">
   <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.7.2/css/all.min.css" rel="stylesheet">
-  <link rel="stylesheet" href="{{ url_for('static', filename='styles.css', v='20260820') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='styles.css', v='20260820-3') }}">
   <script id="initial-scan" type="application/json">{{ initial_scan|tojson }}</script>
   <script id="initial-batch" type="application/json">{{ initial_batch|tojson }}</script>
-  <script src="{{ url_for('static', filename='app.js', v='20260820-3') }}" defer></script>
+  <script src="{{ url_for('static', filename='app.js', v='20260820-4') }}" defer></script>
 </head>
 <body>
   <div class="ambient ambient-one"></div>
@@ -51,6 +51,11 @@
           </button>
         </div>
       </form>
+    </section>
+    <section class="upload-error-details" id="upload-error-details" hidden aria-live="polite">
+      <p class="eyebrow">Archive contents</p>
+      <h2>Unexpected files</h2>
+      <ul id="unexpected-file-list"></ul>
     </section>
 
     <section class="batch-results" id="batch-results" hidden aria-live="polite">

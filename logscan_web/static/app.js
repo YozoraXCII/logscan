@@ -4,6 +4,8 @@ const dropZone = document.querySelector("#drop-zone");
 const filePill = document.querySelector("#file-pill");
 const status = document.querySelector("#form-status");
 const scanButton = document.querySelector("#scan-button");
+const uploadErrorDetails = document.querySelector("#upload-error-details");
+const unexpectedFileList = document.querySelector("#unexpected-file-list");
 const results = document.querySelector("#results");
 const retentionCountdown = document.querySelector("#retention-countdown");
 let retentionTimer;
@@ -107,6 +109,7 @@ function selectedFiles(files) {
     : chosenFiles.length ? `${chosenFiles.length} files selected · ${formatBytes(chosenFiles.reduce((total, file) => total + file.size, 0))}` : "LOG, TXT, YAML or archive · up to 500 MB each";
   status.textContent = chosenFiles.length ? `${chosenFiles.length} file${chosenFiles.length === 1 ? "" : "s"} selected` : "Ready to scan";
   status.classList.remove("error");
+  uploadErrorDetails.hidden = true;
 }
 
 function makeFileList(files) {
@@ -416,7 +419,19 @@ async function openLogViewer(targetStart = 1, targetEnd = targetStart) {
     if (!logViewer.open) logViewer.showModal();
     renderLogWindow(targetStart, targetEnd);
   } catch (error) {
-    status.textContent = error.message;
+    const marker = "Unexpected files:";
+    if (error.message.includes(marker)) {
+      const [summary, names] = error.message.split(marker, 2);
+      status.textContent = summary.trim();
+      unexpectedFileList.replaceChildren(...names.split(",").map((name) => {
+        const item = document.createElement("li");
+        item.textContent = name.trim();
+        return item;
+      }));
+      uploadErrorDetails.hidden = false;
+    } else {
+      status.textContent = error.message;
+    }
     status.classList.add("error");
   }
 }
