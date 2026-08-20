@@ -383,3 +383,39 @@ def scan_log(filename: str, content_bytes: bytes) -> ScanResult:
         overview=_log_overview(filename, content, kometa_version, detected_run_time, normalized),
         categories=category_configuration(),
     )
+
+
+def scan_archive_logs(filename: str, content_bytes: bytes) -> list[tuple[str, bytes, ScanResult]]:
+    """Return one scan input and result for every valid Kometa log in a ZIP."""
+    def collect(name: str, content: bytes, depth: int) -> list[tuple[str, bytes, ScanResult]]:
+        if Path(name).suffix.lower() == ".zip":
+            if depth >= MAX_ARCHIVE_DEPTH:
+                raise ScanError("Archives may be nested no more than three levels deep.")
+            try:
+                with zipfile.ZipFile(BytesIO(content)) as archive:
+                    files = _validate_archive_names([entry.filename for entry in archive.infolist()])
+                    entries = [archive.getinfo(member) for member in files]
+                    if any(entry.flag_bits & 0x1 for entry in entries):
+                        raise ScanError("The ZIP contains encrypted files and cannot be scanned.")
+                    if sum(entry.file_size for entry in entries) > MAX_FILE_BYTES:
+                        raise ScanError("The extracted ZIP contents are larger than the 500 MB limit.")
+                    results = []
+                    for entry in entries:
+                        with archive.open(entry) as member:
+                            results.extend(collect(entry.filename, member.read(), depth + 1))
+                    return results
+            except zipfile.BadZipFile as exc:
+                raise ScanError("The selected ZIP file is invalid.") from exc
+        try:
+            prepared_name, prepared_content = prepare_scan_input(name, content, depth)
+            return [(prepared_name, prepared_content, scan_log(prepared_name, prepared_content))]
+        except ScanError:
+            return []
+
+    scans = collect(filename, content_bytes, 0)
+    total_size = sum(len(content) for _name, content, _result in scans)
+    if total_size > MAX_FILE_BYTES:
+        raise ScanError("The extracted archive contents are larger than the 500 MB limit.")
+    if not scans:
+        raise ScanError("The archive does not contain a complete Kometa log file.")
+    return scans

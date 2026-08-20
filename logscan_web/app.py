@@ -12,7 +12,7 @@ from urllib.request import Request, urlopen
 from flask import Flask, abort, jsonify, render_template, request, send_file, url_for
 from werkzeug.middleware.proxy_fix import ProxyFix
 
-from .scanner import MAX_FILE_BYTES, ScanError, extract_missing_people, prepare_scan_input, scan_log
+from .scanner import MAX_FILE_BYTES, ScanError, extract_missing_people, prepare_scan_input, scan_archive_logs, scan_log
 from .storage import PeopleStore, ScanStore
 
 RETENTION_SECONDS = 48 * 60 * 60
@@ -191,11 +191,10 @@ def create_app() -> Flask:
         if upload is None or not upload.filename:
             return jsonify(error="Choose a log file to scan."), 400
         try:
-            filename, content = prepare_scan_input(upload.filename, upload.read())
-            scan_log(filename, content)
+            scans = scan_archive_logs(upload.filename, upload.read())
         except ScanError as exc:
             return jsonify(error=str(exc)), 400
-        return jsonify(filename=filename, content_size=len(content))
+        return jsonify(files=[{"filename": filename, "content_size": len(content)} for filename, content, _result in scans])
 
     @app.post("/api/scan")
     @app.post("/api/bot/scan")
@@ -208,35 +207,23 @@ def create_app() -> Flask:
             return jsonify(error="Choose a log file to scan."), 400
         try:
             content = upload.read()
-            filename, content = prepare_scan_input(upload.filename, content)
-            result = scan_log(filename, content)
+            scans = scan_archive_logs(upload.filename, content) if request.path == "/api/bot/scan" else []
+            if not scans:
+                filename, content = prepare_scan_input(upload.filename, content)
+                scans = [(filename, content, scan_log(filename, content))]
         except ScanError as exc:
             return jsonify(error=str(exc)), 400
-        scan_id, delete_token = store.create(filename, content, result)
-        result_url = url_for("result_page", scan_id=scan_id, _external=True)
         source_url = request.form.get("source_url") if is_bot else None
-        missing_people = save_missing_people(
-            extract_missing_people(content.decode("utf-8", errors="replace")),
-            filename=result.filename,
-            log_url=result_url,
-            source_url=source_url,
-        )
-        if not is_bot:
-            notify_people_webhook(missing_people)
         expires_at = int((datetime.now(UTC) + timedelta(seconds=RETENTION_SECONDS)).timestamp())
-        return jsonify(
-            id=scan_id,
-            filename=result.filename,
-            recommendations=result.recommendations,
-            metadata=result.metadata,
-            overview=result.overview,
-            categories=result.categories,
-            result_url=result_url,
-            delete_token=delete_token,
-            expires_at=expires_at,
-            uploaded_by_bot=is_bot,
-            missing_people=missing_people,
-        )
+        payloads = []
+        for filename, content, result in scans:
+            scan_id, delete_token = store.create(filename, content, result)
+            result_url = url_for("result_page", scan_id=scan_id, _external=True)
+            missing_people = save_missing_people(extract_missing_people(content.decode("utf-8", errors="replace")), filename=result.filename, log_url=result_url, source_url=source_url)
+            payloads.append({"id": scan_id, "filename": result.filename, "recommendations": result.recommendations, "metadata": result.metadata, "overview": result.overview, "categories": result.categories, "result_url": result_url, "delete_token": delete_token, "expires_at": expires_at, "uploaded_by_bot": is_bot, "missing_people": missing_people})
+        if not is_bot:
+            notify_people_webhook([person for payload in payloads for person in payload["missing_people"]])
+        return jsonify(scans=payloads) if request.path == "/api/bot/scan" else jsonify(payloads[0])
 
     @app.get("/api/people")
     def people():
