@@ -177,16 +177,31 @@ def create_app() -> Flask:
         public["expires_at"] = int(datetime.fromisoformat(record["created_at"]).timestamp() + RETENTION_SECONDS)
         return render_template("index.html", initial_scan=public)
 
+    def bot_request_is_authorized() -> bool:
+        configured_key = app.config["LOGSCAN_API_KEY"]
+        supplied = request.headers.get("Authorization", "").removeprefix("Bearer ")
+        return bool(configured_key) and hmac.compare_digest(supplied, configured_key)
+
+    @app.post("/api/bot/validate")
+    def validate_bot_upload():
+        """Check an attachment without persisting a scan or notifying anyone."""
+        if not bot_request_is_authorized():
+            return jsonify(error="Invalid API key."), 401
+        upload = request.files.get("log")
+        if upload is None or not upload.filename:
+            return jsonify(error="Choose a log file to scan."), 400
+        try:
+            filename, content = prepare_scan_input(upload.filename, upload.read())
+            scan_log(filename, content)
+        except ScanError as exc:
+            return jsonify(error=str(exc)), 400
+        return jsonify(filename=filename, content_size=len(content))
+
     @app.post("/api/scan")
     @app.post("/api/bot/scan")
     def scan():
-        configured_key = app.config["LOGSCAN_API_KEY"]
-        if configured_key:
-            supplied = request.headers.get("Authorization", "").removeprefix("Bearer ")
-            is_bot = hmac.compare_digest(supplied, configured_key)
-        else:
-            is_bot = False
-        if request.path == "/api/bot/scan" and (not configured_key or not is_bot):
+        is_bot = bot_request_is_authorized()
+        if request.path == "/api/bot/scan" and not is_bot:
             return jsonify(error="Invalid API key."), 401
         upload = request.files.get("log")
         if upload is None or not upload.filename:

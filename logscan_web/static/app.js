@@ -5,6 +5,13 @@ const filePill = document.querySelector("#file-pill");
 const status = document.querySelector("#form-status");
 const scanButton = document.querySelector("#scan-button");
 const results = document.querySelector("#results");
+const batchResults = document.querySelector("#batch-results");
+const batchResultLinks = document.querySelector("#batch-result-links");
+const copyBatchResults = document.querySelector("#copy-batch-results");
+const getHelp = document.querySelector("#get-help");
+const helpDialog = document.querySelector("#help-dialog");
+const helpMessage = document.querySelector("#help-message");
+const copyHelpMessage = document.querySelector("#copy-help-message");
 const summaryGrid = document.querySelector("#summary-grid");
 const sectionNav = document.querySelector("#section-nav");
 const sectionContent = document.querySelector("#section-content");
@@ -25,6 +32,7 @@ let viewerFirstLine = 1;
 let viewerLastLine = 1;
 let loadingViewerChunk = false;
 let extractedConfig = "";
+let batchScans = [];
 const VIEWER_CHUNK_SIZE = 1000;
 
 const defaultGroups = [
@@ -83,21 +91,24 @@ function showOverview(group, overview) {
   sectionContent.append(grid);
 }
 
-function selectedFile(file) {
-  input.files = file ? makeFileList(file) : input.files;
-  const chosen = file || input.files[0];
+function selectedFiles(files) {
+  if (files) input.files = makeFileList(files);
+  const chosenFiles = [...input.files];
+  const chosen = chosenFiles[0];
   currentFile = chosen || null;
   currentLogLines = null;
   currentLogSections = [];
-  scanButton.disabled = !chosen;
-  filePill.textContent = chosen ? `${chosen.name} · ${formatBytes(chosen.size)}` : "LOG, TXT, YAML or archive · up to 100 MB";
-  status.textContent = chosen ? "File selected" : "Ready to scan";
+  scanButton.disabled = !chosenFiles.length;
+  filePill.textContent = chosenFiles.length === 1
+    ? `${chosen.name} · ${formatBytes(chosen.size)}`
+    : chosenFiles.length ? `${chosenFiles.length} files selected · ${formatBytes(chosenFiles.reduce((total, file) => total + file.size, 0))}` : "LOG, TXT, YAML or archive · up to 500 MB each";
+  status.textContent = chosenFiles.length ? `${chosenFiles.length} file${chosenFiles.length === 1 ? "" : "s"} selected` : "Ready to scan";
   status.classList.remove("error");
 }
 
-function makeFileList(file) {
+function makeFileList(files) {
   const transfer = new DataTransfer();
-  transfer.items.add(file);
+  for (const file of files) transfer.items.add(file);
   return transfer.files;
 }
 
@@ -475,6 +486,23 @@ function summaryCard(label, value, small = false) {
   return card;
 }
 
+function renderBatchResults(scans) {
+  if (!scans.length) {
+    batchResults.hidden = true;
+    return;
+  }
+  batchResultLinks.replaceChildren();
+  scans.forEach((scan) => {
+    const item = document.createElement("li");
+    const link = document.createElement("a");
+    link.href = `/scan/${encodeURIComponent(scan.id)}`;
+    link.textContent = scan.filename;
+    item.append(link);
+    batchResultLinks.append(item);
+  });
+  batchResults.hidden = false;
+}
+
 function renderResults(data) {
   updateRetentionCountdown(data);
   const { metadata, recommendations, overview = {}, categories = defaultGroups } = data;
@@ -493,6 +521,8 @@ function renderResults(data) {
 
   sectionNav.replaceChildren();
   groups.forEach((group) => {
+    const recommendationCount = recommendations.filter((item) => item.severity === group.key).length;
+    if (group.key !== "overview" && recommendationCount === 0) return;
     const button = document.createElement("button");
     button.type = "button";
     button.className = "nav-button";
@@ -503,7 +533,7 @@ function renderResults(data) {
     if (group.key !== "overview") {
       const badge = document.createElement("span");
       badge.className = "nav-count";
-      badge.textContent = recommendations.filter((item) => item.severity === group.key).length;
+      badge.textContent = recommendationCount;
       button.append(badge);
     }
     button.addEventListener("click", () => group.key === "overview"
@@ -518,7 +548,7 @@ function renderResults(data) {
   results.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
-input.addEventListener("change", () => selectedFile());
+input.addEventListener("change", () => selectedFiles());
 ["dragenter", "dragover"].forEach((eventName) => dropZone.addEventListener(eventName, (event) => {
   event.preventDefault();
   dropZone.classList.add("dragover");
@@ -528,39 +558,43 @@ input.addEventListener("change", () => selectedFile());
   dropZone.classList.remove("dragover");
 }));
 dropZone.addEventListener("drop", (event) => {
-  const file = event.dataTransfer.files[0];
-  if (file) selectedFile(file);
+  const files = [...event.dataTransfer.files];
+  if (files.length) selectedFiles(files);
 });
 
 form.addEventListener("submit", async (event) => {
   event.preventDefault();
-  const file = input.files[0];
-  if (!file) return;
+  const files = [...input.files];
+  if (!files.length) return;
   dropZone.classList.add("loading");
   scanButton.disabled = true;
-  status.textContent = "Scanning your log…";
+  status.textContent = `Scanning 0 of ${files.length} logs…`;
   status.classList.remove("error");
-  const body = new FormData();
-  body.append("log", file);
   try {
-    const response = await fetch("/api/scan", { method: "POST", body });
-    const responseText = await response.text();
-    let data;
-    try {
-      data = responseText ? JSON.parse(responseText) : {};
-    } catch {
-      const contentType = response.headers.get("content-type") || "unknown content type";
-      throw new Error(
-        `The server returned an unexpected response (${response.status} ${response.statusText}; ${contentType}). ` +
-        "Check that the reverse proxy routes /api/scan to Log Scanner and accepts this upload size."
-      );
+    const completed = [];
+    const failures = [];
+    for (const [index, file] of files.entries()) {
+      status.textContent = `Scanning ${index + 1} of ${files.length}: ${file.name}`;
+      const body = new FormData();
+      body.append("log", file);
+      const response = await fetch("/api/scan", { method: "POST", body });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        failures.push(`${file.name}: ${data.error || "The scan could not be completed."}`);
+      } else {
+        completed.push(data);
+      }
     }
-    if (!response.ok) throw new Error(data.error || "The scan could not be completed.");
-    status.textContent = "Scan complete";
-    currentScanId = data.id;
-    deleteToken = data.delete_token;
-    history.replaceState({}, "", `/scan/${encodeURIComponent(data.id)}#delete=${encodeURIComponent(deleteToken)}`);
-    renderResults(data);
+    if (!completed.length) throw new Error(failures.join(" "));
+    status.textContent = failures.length
+      ? `${completed.length} scan${completed.length === 1 ? "" : "s"} complete; ${failures.length} failed`
+      : `${completed.length} scan${completed.length === 1 ? "" : "s"} complete`;
+    batchScans = completed;
+    if (batchScans.length > 1) renderBatchResults(batchScans);
+    currentScanId = completed[0].id;
+    deleteToken = completed[0].delete_token;
+    history.replaceState({}, "", `/scan/${encodeURIComponent(completed[0].id)}#delete=${encodeURIComponent(deleteToken)}`);
+    renderResults(completed[0]);
   } catch (error) {
     status.textContent = error.message;
     status.classList.add("error");
@@ -570,15 +604,37 @@ form.addEventListener("submit", async (event) => {
   }
 });
 
-document.querySelector("#new-scan").addEventListener("click", () => {
-  form.reset();
-  results.hidden = true;
-  selectedFile();
-  document.querySelector("#upload-section").scrollIntoView({ behavior: "smooth", block: "center" });
-});
-
 document.querySelector("#view-log").addEventListener("click", () => openLogViewer(1));
 document.querySelector("#view-config").addEventListener("click", () => openConfigViewer().catch((error) => alert(error.message)));
+getHelp.addEventListener("click", () => {
+  if (!currentScanId) return;
+  const filename = document.querySelector("#results-title").textContent;
+  const resultUrl = new URL(`/scan/${encodeURIComponent(currentScanId)}`, location.origin);
+  helpMessage.value = `I require assistance reviewing my Kometa log file \`${filename}\`, the link to my Logscan results can be found [here](${resultUrl}).`;
+  helpDialog.showModal();
+});
+copyHelpMessage.addEventListener("click", async () => {
+  try {
+    await navigator.clipboard.writeText(helpMessage.value);
+    copyHelpMessage.textContent = "Copied";
+  } catch {
+    helpMessage.select();
+    document.execCommand("copy");
+  }
+});
+document.querySelector("#close-help").addEventListener("click", () => helpDialog.close());
+copyBatchResults.addEventListener("click", async () => {
+  const markdown = batchScans
+    .map((scan) => `- [${scan.filename}](${new URL(`/scan/${encodeURIComponent(scan.id)}`, location.origin)})`)
+    .join("\n");
+  if (!markdown) return;
+  try {
+    await navigator.clipboard.writeText(markdown);
+    copyBatchResults.title = "Copied";
+  } catch {
+    alert("Your browser could not copy the result links.");
+  }
+});
 document.querySelector("#close-config").addEventListener("click", () => configViewer.close());
 document.querySelector("#download-config").addEventListener("click", () => {
   if (!extractedConfig) return;
@@ -598,6 +654,16 @@ document.querySelector("#delete-scan").addEventListener("click", async () => {
     alert("The log could not be deleted. The deletion link may be invalid.");
     return;
   }
+  const wasBatchScan = batchScans.some((scan) => scan.id === currentScanId);
+  if (wasBatchScan) {
+    batchScans = batchScans.filter((scan) => scan.id !== currentScanId);
+    renderBatchResults(batchScans);
+    results.hidden = true;
+    currentScanId = null;
+    deleteToken = null;
+    history.replaceState({}, "", "/");
+    return;
+  }
   location.href = "/";
 });
 document.querySelector("#close-viewer").addEventListener("click", () => logViewer.close());
@@ -615,6 +681,9 @@ logViewer.addEventListener("click", (event) => {
 });
 configViewer.addEventListener("click", (event) => {
   if (event.target === configViewer) configViewer.close();
+});
+helpDialog.addEventListener("click", (event) => {
+  if (event.target === helpDialog) helpDialog.close();
 });
 logCode.addEventListener("scroll", () => {
   if (logCode.scrollTop + logCode.clientHeight >= logCode.scrollHeight - 240) {
