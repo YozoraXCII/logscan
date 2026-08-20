@@ -679,7 +679,7 @@ document.querySelector("#download-config").addEventListener("click", () => {
   URL.revokeObjectURL(link.href);
 });
 document.querySelector("#delete-scan").addEventListener("click", async () => {
-  if (!currentScanId || !deleteToken || !confirm("Permanently delete this log and its scan results?")) return;
+  if (!currentScanId || !deleteToken || !await ConfirmDialog.show({ title: "Delete this scan?", message: "This permanently deletes the log and its scan results.", confirmText: "Delete scan" })) return;
   const response = await fetch(`/api/scans/${encodeURIComponent(currentScanId)}`, {
     method: "DELETE",
     headers: { "X-Delete-Token": deleteToken },

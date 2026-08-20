@@ -70,19 +70,22 @@ button { cursor: pointer; }
 .people-shell { padding-bottom: 80px; }
 .people-gallery { display: grid; gap: 20px; }
 .person-card, .person-detail { padding: 24px; border: 1px solid var(--border); border-radius: 14px; background: var(--surface); }
+.person-card { position: relative; }
 .person-card h2 { font-size: 1.3rem; }
 .person-card h2 a { color: var(--text); text-decoration: none; }
 .person-card h2 a:hover { color: var(--accent-bright); }
 .person-card p { color: var(--muted); font-size: .85rem; }
-.image-row, .image-gallery { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 10px; margin: 18px 0; }
+.image-row, .image-gallery { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 10px; margin: 18px 0; }
 .image-gallery { margin-top: 28px; }
-.image-tile { position: relative; align-self: start; overflow: hidden; border: 1px solid var(--border); border-radius: 9px; background: var(--surface-soft); }
+.image-tile { align-self: start; overflow: hidden; border: 1px solid var(--border); border-radius: 9px; background: var(--surface-soft); }
+.image-frame { position: relative; }
 .person-image { display: block; }
 .person-image img { display: block; width: 100%; height: auto; transition: transform .2s ease; }
 .person-image:hover img { transform: scale(1.04); }
 .image-download { position: absolute; right: 8px; bottom: 8px; display: grid; place-items: center; width: 32px; height: 32px; border: 1px solid rgba(255,255,255,.35); border-radius: 8px; background: rgba(8,11,24,.78); color: white; backdrop-filter: blur(6px); }
 .image-download:hover { background: var(--accent); }
 .image-download svg { width: 17px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.image-label { padding: 9px 10px; color: var(--muted); font-size: .72rem; font-weight: 600; text-align: center; }
 .no-image { min-height: 140px; display: grid; place-items: center; padding: 16px; border: 1px dashed var(--border); border-radius: 9px; color: var(--muted); text-align: center; }
 .upload-image-tile { min-height: 140px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 9px; padding: 16px; border: 1px dashed rgba(148,151,255,.55); border-radius: 9px; color: #dfe2ff; background: rgba(114,119,248,.08); text-align: center; text-decoration: none; }
 .upload-image-tile:hover { border-color: var(--accent-bright); background: rgba(114,119,248,.16); }
@@ -91,6 +94,17 @@ button { cursor: pointer; }
 .inline-plus-icon { display: inline-block; width: .95rem; height: .95rem; margin: 0 .1rem; vertical-align: -.15rem; fill: none; stroke: var(--accent-bright); stroke-width: 2; stroke-linecap: round; }
 .person-card p a, .person-detail .hero-copy a { color: var(--accent-bright); }
 .person-actions { display: flex; justify-content: flex-end; }
+.person-controls { position: absolute; top: 20px; right: 20px; display: flex; gap: 8px; }
+.exclude-person, .ok-person { display: inline-flex; align-items: center; justify-content: center; width: 34px; height: 34px; padding: 0; font-size: .78rem; }
+.exclude-person .fa-ban { display: block; font-family: "Font Awesome 6 Free"; font-size: 1rem; font-style: normal; font-weight: 900; line-height: 1; }
+.ok-person { border: 1px solid rgba(74, 222, 128, .42); border-radius: 9px; background: rgba(74, 222, 128, .12); color: #bbf7d0; }
+.ok-person:hover { border-color: rgba(74, 222, 128, .78); background: rgba(74, 222, 128, .23); color: #dcfce7; }
+.ok-person .fa-check { display: block; font-family: "Font Awesome 6 Free"; font-size: 1rem; font-style: normal; font-weight: 900; line-height: 1; }
+.pagination { display: flex; align-items: center; justify-content: center; gap: 16px; margin-top: 32px; color: var(--muted); font-size: .85rem; }
+.pagination a { text-decoration: none; }
+.pagination-disabled { opacity: .4; }
+.page-jumper { display: inline-flex; align-items: center; gap: 7px; color: var(--muted); }
+.page-jumper select { height: 38px; min-width: 62px; padding: 0 8px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface-strong); color: var(--text); font: inherit; }
 
 .shell { width: min(1040px, calc(100% - 40px)); margin: 0 auto; }
 .hero { max-width: 760px; padding: 92px 0 42px; }
@@ -157,6 +171,12 @@ h2 { margin: 0; font-size: clamp(2rem, 4vw, 3rem); letter-spacing: -.04em; }
 .secondary-button:hover { border-color: rgba(160,174,221,.35); }
 .danger-button { padding: 11px 15px; border: 1px solid rgba(251,113,133,.35); background: rgba(251,113,133,.1); color: #fecdd3; }
 .danger-button:hover { background: rgba(251,113,133,.18); }
+.confirm-dialog { width: min(440px, calc(100% - 32px)); padding: 0; border: 1px solid rgba(160,174,221,.22); border-radius: 16px; background: #0b0e1c; color: var(--text); box-shadow: 0 30px 100px rgba(0,0,0,.62); }
+.confirm-dialog::backdrop { background: rgba(3,5,13,.78); backdrop-filter: blur(5px); }
+.confirm-dialog-content { padding: 26px; }
+.confirm-dialog h2 { font-size: 1.35rem; }
+.confirm-dialog p { margin: 12px 0 0; color: var(--muted); line-height: 1.55; }
+.confirm-dialog-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 26px; }
 
 .summary-grid { display: grid; grid-template-columns: 1.4fr repeat(3, 1fr); gap: 12px; margin: 30px 0; }
 .summary-card { min-height: 112px; padding: 20px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); }
@@ -267,6 +287,9 @@ footer { width: min(1040px, calc(100% - 40px)); margin: 100px auto 0; padding: 2
   .section-nav { position: static; flex-direction: row; overflow-x: auto; }
   .nav-button { flex: 0 0 auto; }
   .image-row, .image-gallery { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 960px) and (min-width: 761px) {
+  .image-row, .image-gallery { grid-template-columns: repeat(5, minmax(0, 1fr)); }
 }
 .upload-error-details { margin-top: 18px; padding: 22px 24px; border: 1px solid rgba(251,113,133,.4); border-radius: 14px; background: rgba(251,113,133,.08); }
 .upload-error-details h2 { font-size: 1.35rem; color: #fecdd3; }

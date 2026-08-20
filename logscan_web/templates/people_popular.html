@@ -1,0 +1,16 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Popular People · Kometa Utilities</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.7.2/css/all.min.css" rel="stylesheet">
+  <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+  <script src="{{ url_for('static', filename='people_images.js') }}" defer></script><script src="{{ url_for('static', filename='confirm_dialog.js') }}" defer></script><script src="{{ url_for('static', filename='people_popular.js') }}" defer></script>
+</head>
+<body>
+  <header class="site-header"><a class="brand" href="/"><span class="brand-mark">K</span><span>Kometa Utilities</span></a><nav class="header-links"><a href="/people">Missing People</a><span class="utility-label">Popular People</span></nav></header>
+  <main class="shell people-shell"><section class="hero"><p class="eyebrow">People Posters</p><h1>Popular People</h1><p class="hero-copy">TMDb’s 1,000 most popular people, with their current TMDb profile image and any matching image from Kometa’s People Images repository.</p></section><section id="people-gallery" class="people-gallery" aria-live="polite">Loading popular people…</section><nav id="popular-pagination" class="pagination" aria-label="Popular people pages"></nav></main>
+</body>
+</html>

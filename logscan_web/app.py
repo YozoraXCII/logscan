@@ -2,6 +2,7 @@ import hmac
 import hashlib
 import json
 import os
+import re
 import threading
 import time
 from datetime import UTC, datetime, timedelta
@@ -13,10 +14,23 @@ from flask import Flask, abort, jsonify, render_template, request, send_file, ur
 from werkzeug.middleware.proxy_fix import ProxyFix
 
 from .scanner import MAX_FILE_BYTES, ScanError, extract_missing_people, find_scannable_archive_logs, prepare_scan_input, scan_archive_logs, scan_log
-from .storage import PeopleStore, ScanStore
+from .storage import PeopleStore, PopularPeopleCheckStore, PopularPeopleExclusionStore, ScanStore
 
 RETENTION_SECONDS = 48 * 60 * 60
 CLEANUP_INTERVAL_SECONDS = 60 * 60
+POPULAR_PEOPLE_PAGE_SIZE = 25
+TMDB_POPULAR_PAGE_SIZE = 20
+KOMETA_IMAGE_SOURCES = (
+    ("Kometa Repo Image", "https://raw.githubusercontent.com/Kometa-Team/People-Images/refs/heads/master/README.md"),
+    ("Transparent", "https://raw.githubusercontent.com/Kometa-Team/People-Images-transparent/master/README.md"),
+    ("DIIIVOY", "https://raw.githubusercontent.com/Kometa-Team/People-Images-diiivoy/master/README.md"),
+    ("DIIIVOY Color", "https://raw.githubusercontent.com/Kometa-Team/People-Images-diiivoycolor/master/README.md"),
+    ("Rainier", "https://raw.githubusercontent.com/Kometa-Team/People-Images-rainier/master/README.md"),
+    ("Signature", "https://raw.githubusercontent.com/Kometa-Team/People-Images-signature/master/README.md"),
+)
+KOMETA_IMAGE_CACHE_SECONDS = 60 * 60
+POPULAR_PEOPLE_CACHE_SECONDS = 60 * 60
+POPULAR_PEOPLE_CHECK_SECONDS = 30 * 24 * 60 * 60
 
 
 def load_local_env() -> None:
@@ -47,6 +61,12 @@ def create_app() -> Flask:
     app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
     store = ScanStore(app.config["SCAN_STORE"])
     people_store = PeopleStore(app.config["SCAN_STORE"])
+    popular_people_exclusions = PopularPeopleExclusionStore(app.config["SCAN_STORE"])
+    popular_people_checks = PopularPeopleCheckStore(app.config["SCAN_STORE"])
+    kometa_images_cache = {"expires_at": 0.0, "images": {}}
+    kometa_images_lock = threading.Lock()
+    popular_people_cache = {"expires_at": 0.0, "people": []}
+    popular_people_lock = threading.Lock()
 
     def tmdb_get(path: str, params: dict | None = None) -> dict | None:
         api_key = app.config["TMDB_API_KEY"]
@@ -61,6 +81,75 @@ def create_app() -> Flask:
         except (HTTPError, URLError, TimeoutError, ValueError):
             app.logger.warning("TMDb lookup failed for %s", path)
             return None
+
+    def kometa_image_urls() -> dict[str, dict[str, str]]:
+        """Map each image source to its case-insensitive person-name URLs."""
+        with kometa_images_lock:
+            if kometa_images_cache["expires_at"] > time.monotonic():
+                return kometa_images_cache["images"]
+            images = {}
+            for label, readme_url in KOMETA_IMAGE_SOURCES:
+                try:
+                    with urlopen(Request(readme_url, headers={"Accept": "text/plain"}), timeout=15) as response:
+                        readme = response.read().decode("utf-8")
+                except (HTTPError, URLError, TimeoutError, UnicodeDecodeError):
+                    app.logger.warning("Unable to fetch the %s people-image README.", label)
+                    continue
+                images[label] = {
+                    name.casefold(): url
+                    for name, url in re.findall(r"^\* \[([^]]+)]\((https://[^)]+)\)$", readme, re.MULTILINE)
+                }
+            kometa_images_cache.update(expires_at=time.monotonic() + KOMETA_IMAGE_CACHE_SECONDS, images=images)
+            return images
+
+    def popular_people() -> list[dict]:
+        """Get a stable, de-duplicated snapshot of TMDb's top popular people."""
+        excluded_ids = popular_people_exclusions.list()
+        checked_ids = popular_people_checks.active_ids(POPULAR_PEOPLE_CHECK_SECONDS)
+        with popular_people_lock:
+            if popular_people_cache["expires_at"] > time.monotonic():
+                return [person for person in popular_people_cache["people"] if person["id"] not in excluded_ids | checked_ids]
+            popular = []
+            seen_ids = set()
+            for tmdb_page in range(1, (1000 // TMDB_POPULAR_PAGE_SIZE) + 1):
+                data = tmdb_get("/person/popular", {"page": tmdb_page})
+                for person in (data or {}).get("results", []):
+                    person_id = person.get("id")
+                    if not person_id or person_id in seen_ids or person_id in excluded_ids | checked_ids or person.get("adult"):
+                        continue
+                    seen_ids.add(person_id)
+                    popular.append(person)
+            popular_people_cache.update(expires_at=time.monotonic() + POPULAR_PEOPLE_CACHE_SECONDS, people=popular)
+            return popular
+
+    def popular_people_payload(people: list[dict]) -> list[dict]:
+        """Build display data only for the currently requested page of people."""
+        kometa_images = kometa_image_urls()
+        payload = []
+        for person in people:
+            profile_path = person.get("profile_path")
+            name = person.get("name", "Unknown person")
+            known_for = []
+            for credit in person.get("known_for", [])[:3]:
+                media_type = credit.get("media_type")
+                credit_id = credit.get("id")
+                title = credit.get("title") or credit.get("name")
+                if media_type in {"movie", "tv"} and credit_id and title:
+                    known_for.append({"title": title, "url": f"https://www.themoviedb.org/{media_type}/{credit_id}"})
+            repo_image = kometa_images.get("Kometa Repo Image", {}).get(name.casefold())
+            variant_images = [
+                {"label": label, "url": urls[name.casefold()]}
+                for label, urls in kometa_images.items()
+                if label != "Kometa Repo Image" and name.casefold() in urls
+            ] if repo_image else []
+            payload.append({
+                "tmdb_id": person["id"], "name": name,
+                "known_for_department": person.get("known_for_department"), "known_for": known_for,
+                "tmdb_image": {"preview_url": f"https://image.tmdb.org/t/p/w342{profile_path}", "download_url": f"https://image.tmdb.org/t/p/original{profile_path}"} if profile_path else None,
+                "kometa_image": repo_image,
+                "kometa_variant_images": variant_images,
+            })
+        return payload
 
     def save_missing_people(candidates: list[dict], *, filename: str, log_url: str, source_url: str | None) -> list[dict]:
         saved = []
@@ -161,6 +250,10 @@ def create_app() -> Flask:
     @app.get("/people")
     def people_page():
         return render_template("people.html")
+
+    @app.get("/people/popular")
+    def popular_people_page():
+        return render_template("people_popular.html")
 
     @app.get("/people/<person_key>")
     def person_page(person_key):
@@ -271,6 +364,31 @@ def create_app() -> Flask:
         for person in people:
             person["people_url"] = url_for("person_page", person_key=person["key"], _external=True)
         return jsonify(people=people)
+
+    @app.get("/api/people/popular")
+    def popular_people_api():
+        if not app.config["TMDB_API_KEY"]:
+            return jsonify(error="TMDb API key is not configured."), 503
+        page = request.args.get("page", default=1, type=int)
+        people = popular_people()
+        total_pages = max(1, (len(people) + POPULAR_PEOPLE_PAGE_SIZE - 1) // POPULAR_PEOPLE_PAGE_SIZE)
+        if page is None or not 1 <= page <= total_pages:
+            return jsonify(error=f"Page must be between 1 and {total_pages}."), 400
+        first_index = (page - 1) * POPULAR_PEOPLE_PAGE_SIZE
+        page_people = people[first_index:first_index + POPULAR_PEOPLE_PAGE_SIZE]
+        return jsonify(people=popular_people_payload(page_people), page=page, total_pages=total_pages)
+
+    @app.post("/api/people/popular/<int:person_id>/exclude")
+    def exclude_popular_person(person_id):
+        if popular_people_exclusions.add(person_id):
+            return "", 201
+        return "", 204
+
+    @app.post("/api/people/popular/<int:person_id>/check")
+    def check_popular_person(person_id):
+        if not popular_people_checks.mark(person_id):
+            abort(400)
+        return "", 204
 
     @app.get("/api/people/<person_key>/images")
     def person_images(person_key):

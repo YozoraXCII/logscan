@@ -165,3 +165,79 @@ class PeopleStore:
         temporary = self.path.with_suffix(".tmp")
         temporary.write_text(json.dumps(people, ensure_ascii=False), encoding="utf-8")
         temporary.replace(self.path)
+
+
+class PopularPeopleExclusionStore:
+    """Durable TMDb person-ID exclusions for the Popular People page."""
+
+    def __init__(self, root: str | os.PathLike[str]):
+        self.path = Path(root) / "popular_people_exclusions.json"
+        self.lock = threading.Lock()
+
+    def list(self) -> set[int]:
+        with self.lock:
+            try:
+                values = json.loads(self.path.read_text(encoding="utf-8"))
+            except (FileNotFoundError, json.JSONDecodeError):
+                return set()
+            return {value for value in values if isinstance(value, int) and value > 0} if isinstance(values, list) else set()
+
+    def add(self, person_id: int) -> bool:
+        if person_id <= 0:
+            return False
+        with self.lock:
+            try:
+                values = json.loads(self.path.read_text(encoding="utf-8"))
+            except (FileNotFoundError, json.JSONDecodeError):
+                values = []
+            exclusions = {value for value in values if isinstance(value, int) and value > 0} if isinstance(values, list) else set()
+            if person_id in exclusions:
+                return False
+            exclusions.add(person_id)
+            temporary = self.path.with_suffix(".tmp")
+            temporary.write_text(json.dumps(sorted(exclusions)), encoding="utf-8")
+            temporary.replace(self.path)
+            return True
+
+
+class PopularPeopleCheckStore:
+    """Durable, timestamped checks that temporarily hide popular people."""
+
+    def __init__(self, root: str | os.PathLike[str]):
+        self.path = Path(root) / "popular_people_checked.json"
+        self.lock = threading.Lock()
+
+    def active_ids(self, max_age_seconds: int) -> set[int]:
+        cutoff = datetime.now(UTC).timestamp() - max_age_seconds
+        with self.lock:
+            records = self._read()
+            active = set()
+            for person_id, checked_at in records.items():
+                try:
+                    timestamp = datetime.fromisoformat(checked_at).timestamp()
+                except (TypeError, ValueError):
+                    continue
+                if timestamp >= cutoff:
+                    active.add(person_id)
+            return active
+
+    def mark(self, person_id: int) -> bool:
+        if person_id <= 0:
+            return False
+        with self.lock:
+            records = self._read()
+            records[person_id] = datetime.now(UTC).isoformat()
+            self._write(records)
+            return True
+
+    def _read(self) -> dict[int, str]:
+        try:
+            values = json.loads(self.path.read_text(encoding="utf-8"))
+        except (FileNotFoundError, json.JSONDecodeError):
+            return {}
+        return {int(person_id): checked_at for person_id, checked_at in values.items() if str(person_id).isdigit() and isinstance(checked_at, str)} if isinstance(values, dict) else {}
+
+    def _write(self, records: dict[int, str]) -> None:
+        temporary = self.path.with_suffix(".tmp")
+        temporary.write_text(json.dumps({str(person_id): checked_at for person_id, checked_at in records.items()}), encoding="utf-8")
+        temporary.replace(self.path)

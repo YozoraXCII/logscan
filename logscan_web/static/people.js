@@ -1,11 +1,5 @@
 const gallery = document.querySelector("#people-gallery");
-
-function noImage() {
-  const element = document.createElement("div");
-  element.className = "no-image";
-  element.textContent = "No TMDb images found";
-  return element;
-}
+const { imageCard, noImage } = window.PeopleImages;
 
 function tmdbProfilesUrl(person) {
   return `https://www.themoviedb.org/person/${encodeURIComponent(person.tmdb_id)}/images/profiles`;
@@ -21,35 +15,8 @@ function uploadTile(person) {
   return link;
 }
 
-function imageCard(image) {
-  const tile = document.createElement("div");
-  tile.className = "image-tile";
-  const link = document.createElement("a");
-  link.className = "person-image";
-  link.href = image.download_url;
-  link.target = "_blank";
-  link.rel = "noopener";
-  link.title = "View the original image";
-  const imageElement = document.createElement("img");
-  imageElement.src = image.preview_url;
-  imageElement.alt = "TMDb profile image";
-  imageElement.loading = "lazy";
-  link.append(imageElement);
-  const download = document.createElement("a");
-  download.className = "image-download";
-  download.href = image.download_url;
-  download.download = "";
-  download.target = "_blank";
-  download.rel = "noopener";
-  download.title = "Download original image";
-  download.setAttribute("aria-label", "Download original image");
-  download.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v11m0 0 4-4m-4 4-4-4M5 17v3h14v-3"/></svg>';
-  tile.append(link, download);
-  return tile;
-}
-
 async function complete(key, card) {
-  if (!confirm("Mark this person complete and remove them from the backlog?")) return;
+  if (!await ConfirmDialog.show({ title: "Mark person complete?", message: "This person will be removed from the missing-images backlog.", confirmText: "Mark complete" })) return;
   const response = await fetch(`/api/people/${encodeURIComponent(key)}`, { method: "DELETE" });
   if (!response.ok) return alert("That person could not be removed.");
   card.remove();
