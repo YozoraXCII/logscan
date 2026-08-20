@@ -546,7 +546,7 @@ function renderResults(data) {
   showOverview(groups[0], overview);
   results.hidden = false;
   currentScanId = data.id || currentScanId;
-  document.querySelector("#delete-scan").hidden = !deleteToken;
+  document.querySelector("#delete-scan").hidden = !new URLSearchParams(location.hash.slice(1)).get("delete");
   results.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 

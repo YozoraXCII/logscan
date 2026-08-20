@@ -156,7 +156,7 @@ def create_app() -> Flask:
 
     @app.get("/")
     def index():
-        return render_template("index.html", initial_scan=None)
+        return render_template("index.html", initial_scan=None, initial_batch=None)
 
     @app.get("/people")
     def people_page():
@@ -175,14 +175,18 @@ def create_app() -> Flask:
             abort(404)
         public = {key: value for key, value in record.items() if key != "delete_token_hash"}
         public["expires_at"] = int(datetime.fromisoformat(record["created_at"]).timestamp() + RETENTION_SECONDS)
-        return render_template("index.html", initial_scan=public)
+        return render_template("index.html", initial_scan=public, initial_batch=None)
 
     @app.get("/batch/<batch_id>")
     def batch_page(batch_id):
         batch = store.get_batch(batch_id)
         if batch is None:
             abort(404)
-        return render_template("batch.html", scans=batch["scans"], admin=False)
+        public_scans = [
+            {key: scan[key] for key in ("id", "filename", "result_url", "expires_at")}
+            for scan in batch["scans"]
+        ]
+        return render_template("index.html", initial_scan=None, initial_batch=public_scans)
 
     @app.get("/batch/<batch_id>/admin/<token>")
     def batch_admin_page(batch_id, token):
