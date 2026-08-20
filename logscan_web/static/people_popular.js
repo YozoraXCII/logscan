@@ -110,11 +110,10 @@ function addPerson(person) {
   const images = document.createElement("div");
   images.className = "image-row";
   addImage(images, person.tmdb_image, "Current TMDb Image", "No current TMDb image", person.name);
-  if (person.flag_reason) images.append(googleImageSearchTile(person.name));
   const kometaImage = person.kometa_image && { preview_url: person.kometa_image, download_url: person.kometa_image };
   addImage(images, kometaImage, "Kometa Repo Image", "No Kometa Repo image", person.name);
-  const variants = person.flag_reason ? (person.kometa_variant_images || []).slice(0, 4) : (person.kometa_variant_images || []);
-  variants.forEach((variant) => {
+  images.append(googleImageSearchTile(person.name));
+  (person.kometa_variant_images || []).forEach((variant) => {
     addImage(images, { preview_url: variant.url, download_url: variant.url }, variant.label, "", person.name);
   });
   const flagReason = document.createElement("aside");
