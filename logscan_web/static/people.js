@@ -1,5 +1,5 @@
 const gallery = document.querySelector("#people-gallery");
-const { imageCard, noImage } = window.PeopleImages;
+const { googleImageSearchTile, imageCard, noImage } = window.PeopleImages;
 
 function tmdbProfilesUrl(person) {
   return `https://www.themoviedb.org/person/${encodeURIComponent(person.tmdb_id)}/images/profiles`;
@@ -57,9 +57,11 @@ async function addPerson(person) {
     const data = await response.json();
     (data.images || []).forEach((image) => images.append(imageCard(image)));
     if (!data.images?.length) images.append(noImage());
+    images.append(googleImageSearchTile(person.name));
     if (person.tmdb_id) images.append(uploadTile(person));
   } catch {
     images.append(noImage());
+    images.append(googleImageSearchTile(person.name));
     if (person.tmdb_id) images.append(uploadTile(person));
   }
 }

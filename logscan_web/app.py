@@ -195,16 +195,24 @@ def create_app() -> Flask:
         if not new_people:
             return
         first = new_people[0]
-        names = "\n".join(
-            f"- [{person['name']}]({person['people_url']}) — **TMDb Image Found:** "
-            f"{'Yes' if person.get('tmdb_image_found') else 'No'}"
-            for person in new_people
-        )
+        if len(new_people) > 2:
+            names = "\n".join(f"- {person['name']}" for person in new_people)
+            people_summary = (
+                f"**People Found:**\n{names}\n"
+                f"[Review all missing people images]({url_for('people_page', _external=True)})"
+            )
+        else:
+            names = "\n".join(
+                f"- [{person['name']}]({person['people_url']}) — **TMDb Image Found:** "
+                f"{'Yes' if person.get('tmdb_image_found') else 'No'}"
+                for person in new_people
+            )
+            people_summary = f"**People Found:**\n{names}"
         message = (
             f"**Log Name:** `{first['log_name']}`\n"
             f"**Log URL:** [Click Here]({first['log_url']})\n"
             "**Log Source:** Not available\n"
-            f"**People Found:**\n{names}"
+            f"{people_summary}"
         )
         try:
             payload = json.dumps({"content": message[:2000], "flags": 4}).encode("utf-8")

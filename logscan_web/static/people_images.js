@@ -40,4 +40,27 @@ window.PeopleImages = {
     }
     return tile;
   },
+  googleImageSearchTile(name) {
+    const parameters = new URLSearchParams({
+      q: name,
+      as_st: "y",
+      imgar: "t|xt",
+      udm: "2",
+      tbs: "itp:face,qdr:y",
+    });
+    const link = document.createElement("a");
+    link.className = "image-tile google-image-search-tile";
+    link.href = `https://www.google.co.uk/search?${parameters}`;
+    link.target = "_blank";
+    link.rel = "noopener";
+    const image = document.createElement("img");
+    image.src = "/static/google.jpg";
+    image.alt = "Google Image Search";
+    image.loading = "lazy";
+    const label = document.createElement("div");
+    label.className = "image-label";
+    label.textContent = "Google Image Search";
+    link.append(image, label);
+    return link;
+  },
 };
