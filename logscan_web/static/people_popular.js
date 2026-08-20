@@ -7,11 +7,36 @@ function addImage(images, image, label, missingMessage, name) {
   images.append(image ? imageCard({ ...image, label, alt: `${name} ${label}` }) : noImage(missingMessage));
 }
 
+function googleImageSearchTile(name) {
+  const parameters = new URLSearchParams({
+    q: name,
+    as_st: "y",
+    imgar: "t|xt",
+    udm: "2",
+    tbs: "itp:face,qdr:y",
+  });
+  const link = document.createElement("a");
+  link.className = "image-tile google-image-search-tile";
+  link.href = `https://www.google.co.uk/search?${parameters}`;
+  link.target = "_blank";
+  link.rel = "noopener";
+  const image = document.createElement("img");
+  image.src = "/static/google.jpg";
+  image.alt = "Google Image Search";
+  image.loading = "lazy";
+  const label = document.createElement("div");
+  label.className = "image-label";
+  label.textContent = "Google Image Search";
+  link.append(image, label);
+  return link;
+}
+
 function addPerson(person) {
   const card = document.createElement("article");
   card.className = "person-card";
   const controls = document.createElement("div");
   controls.className = "person-controls";
+  if (person.flag_reason) card.classList.add("flagged-person");
   const exclude = document.createElement("button");
   exclude.className = "danger-button exclude-person";
   exclude.type = "button";
@@ -34,7 +59,24 @@ function addPerson(person) {
     if (!response.ok) return alert("That person could not be marked OK.");
     card.remove();
   });
-  controls.append(check, exclude);
+  const flag = document.createElement("button");
+  flag.className = "flag-person";
+  flag.type = "button";
+  flag.title = "Flag for Review";
+  flag.setAttribute("aria-label", `Flag ${person.name} for review`);
+  flag.innerHTML = '<i class="fa-solid fa-flag" aria-hidden="true"></i>';
+  flag.addEventListener("click", async () => {
+    const reason = await FlagDialog.show(person.name);
+    if (!reason) return;
+    const response = await fetch(`/api/people/popular/${encodeURIComponent(person.tmdb_id)}/flag`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ reason }),
+    });
+    if (!response.ok) return alert("That person could not be flagged.");
+    location.href = "/people/popular?page=1";
+  });
+  controls.append(check, flag, exclude);
   const heading = document.createElement("h2");
   const link = document.createElement("a");
   link.href = `https://www.themoviedb.org/person/${encodeURIComponent(person.tmdb_id)}`;
@@ -68,12 +110,21 @@ function addPerson(person) {
   const images = document.createElement("div");
   images.className = "image-row";
   addImage(images, person.tmdb_image, "Current TMDb Image", "No current TMDb image", person.name);
+  if (person.flag_reason) images.append(googleImageSearchTile(person.name));
   const kometaImage = person.kometa_image && { preview_url: person.kometa_image, download_url: person.kometa_image };
   addImage(images, kometaImage, "Kometa Repo Image", "No Kometa Repo image", person.name);
-  (person.kometa_variant_images || []).forEach((variant) => {
+  const variants = person.flag_reason ? (person.kometa_variant_images || []).slice(0, 4) : (person.kometa_variant_images || []);
+  variants.forEach((variant) => {
     addImage(images, { preview_url: variant.url, download_url: variant.url }, variant.label, "", person.name);
   });
-  card.append(controls, heading, detail, knownFor, images);
+  const flagReason = document.createElement("aside");
+  flagReason.className = "flag-reason";
+  if (person.flag_reason) {
+    const label = document.createElement("strong");
+    label.textContent = "Flag Reason";
+    flagReason.append(label, document.createTextNode(person.flag_reason));
+  } else flagReason.hidden = true;
+  card.append(controls, heading, detail, knownFor, flagReason, images);
   gallery.append(card);
 }
 

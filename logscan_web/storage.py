@@ -241,3 +241,49 @@ class PopularPeopleCheckStore:
         temporary = self.path.with_suffix(".tmp")
         temporary.write_text(json.dumps({str(person_id): checked_at for person_id, checked_at in records.items()}), encoding="utf-8")
         temporary.replace(self.path)
+
+
+class PopularPeopleFlagStore:
+    """Durable review flags and their reasons for Popular People."""
+
+    def __init__(self, root: str | os.PathLike[str]):
+        self.path = Path(root) / "popular_people_flags.json"
+        self.lock = threading.Lock()
+
+    def list(self) -> dict[int, dict[str, str]]:
+        with self.lock:
+            return self._read()
+
+    def upsert(self, person_id: int, reason: str) -> bool:
+        if person_id <= 0 or not reason.strip():
+            return False
+        with self.lock:
+            flags = self._read()
+            flags[person_id] = {"reason": reason.strip(), "flagged_at": datetime.now(UTC).isoformat()}
+            self._write(flags)
+            return True
+
+    def delete(self, person_id: int) -> bool:
+        with self.lock:
+            flags = self._read()
+            if person_id not in flags:
+                return False
+            del flags[person_id]
+            self._write(flags)
+            return True
+
+    def _write(self, flags: dict[int, dict[str, str]]) -> None:
+        temporary = self.path.with_suffix(".tmp")
+        temporary.write_text(json.dumps({str(person_id): flag for person_id, flag in flags.items()}, ensure_ascii=False), encoding="utf-8")
+        temporary.replace(self.path)
+
+    def _read(self) -> dict[int, dict[str, str]]:
+        try:
+            values = json.loads(self.path.read_text(encoding="utf-8"))
+        except (FileNotFoundError, json.JSONDecodeError):
+            return {}
+        return {
+            int(person_id): record
+            for person_id, record in values.items()
+            if str(person_id).isdigit() and isinstance(record, dict) and isinstance(record.get("reason"), str)
+        } if isinstance(values, dict) else {}

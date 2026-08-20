@@ -14,7 +14,7 @@ from flask import Flask, abort, jsonify, render_template, request, send_file, ur
 from werkzeug.middleware.proxy_fix import ProxyFix
 
 from .scanner import MAX_FILE_BYTES, ScanError, extract_missing_people, find_scannable_archive_logs, prepare_scan_input, scan_archive_logs, scan_log
-from .storage import PeopleStore, PopularPeopleCheckStore, PopularPeopleExclusionStore, ScanStore
+from .storage import PeopleStore, PopularPeopleCheckStore, PopularPeopleExclusionStore, PopularPeopleFlagStore, ScanStore
 
 RETENTION_SECONDS = 48 * 60 * 60
 CLEANUP_INTERVAL_SECONDS = 60 * 60
@@ -63,6 +63,7 @@ def create_app() -> Flask:
     people_store = PeopleStore(app.config["SCAN_STORE"])
     popular_people_exclusions = PopularPeopleExclusionStore(app.config["SCAN_STORE"])
     popular_people_checks = PopularPeopleCheckStore(app.config["SCAN_STORE"])
+    popular_people_flags = PopularPeopleFlagStore(app.config["SCAN_STORE"])
     kometa_images_cache = {"expires_at": 0.0, "images": {}}
     kometa_images_lock = threading.Lock()
     popular_people_cache = {"expires_at": 0.0, "people": []}
@@ -106,9 +107,11 @@ def create_app() -> Flask:
         """Get a stable, de-duplicated snapshot of TMDb's top popular people."""
         excluded_ids = popular_people_exclusions.list()
         checked_ids = popular_people_checks.active_ids(POPULAR_PEOPLE_CHECK_SECONDS)
+        flags = popular_people_flags.list()
         with popular_people_lock:
             if popular_people_cache["expires_at"] > time.monotonic():
-                return [person for person in popular_people_cache["people"] if person["id"] not in excluded_ids | checked_ids]
+                people = [person for person in popular_people_cache["people"] if person["id"] not in excluded_ids | checked_ids]
+                return sorted(people, key=lambda person: person["id"] not in flags)
             popular = []
             seen_ids = set()
             for tmdb_page in range(1, (1000 // TMDB_POPULAR_PAGE_SIZE) + 1):
@@ -120,9 +123,9 @@ def create_app() -> Flask:
                     seen_ids.add(person_id)
                     popular.append(person)
             popular_people_cache.update(expires_at=time.monotonic() + POPULAR_PEOPLE_CACHE_SECONDS, people=popular)
-            return popular
+            return sorted(popular, key=lambda person: person["id"] not in flags)
 
-    def popular_people_payload(people: list[dict]) -> list[dict]:
+    def popular_people_payload(people: list[dict], flags: dict[int, dict[str, str]]) -> list[dict]:
         """Build display data only for the currently requested page of people."""
         kometa_images = kometa_image_urls()
         payload = []
@@ -148,6 +151,7 @@ def create_app() -> Flask:
                 "tmdb_image": {"preview_url": f"https://image.tmdb.org/t/p/w342{profile_path}", "download_url": f"https://image.tmdb.org/t/p/original{profile_path}"} if profile_path else None,
                 "kometa_image": repo_image,
                 "kometa_variant_images": variant_images,
+                "flag_reason": flags.get(person["id"], {}).get("reason"),
             })
         return payload
 
@@ -376,7 +380,7 @@ def create_app() -> Flask:
             return jsonify(error=f"Page must be between 1 and {total_pages}."), 400
         first_index = (page - 1) * POPULAR_PEOPLE_PAGE_SIZE
         page_people = people[first_index:first_index + POPULAR_PEOPLE_PAGE_SIZE]
-        return jsonify(people=popular_people_payload(page_people), page=page, total_pages=total_pages)
+        return jsonify(people=popular_people_payload(page_people, popular_people_flags.list()), page=page, total_pages=total_pages)
 
     @app.post("/api/people/popular/<int:person_id>/exclude")
     def exclude_popular_person(person_id):
@@ -388,6 +392,15 @@ def create_app() -> Flask:
     def check_popular_person(person_id):
         if not popular_people_checks.mark(person_id):
             abort(400)
+        popular_people_flags.delete(person_id)
+        return "", 204
+
+    @app.post("/api/people/popular/<int:person_id>/flag")
+    def flag_popular_person(person_id):
+        payload = request.get_json(silent=True) or {}
+        reason = payload.get("reason", "")
+        if not isinstance(reason, str) or len(reason.strip()) > 500 or not popular_people_flags.upsert(person_id, reason):
+            return jsonify(error="Provide a flag reason of up to 500 characters."), 400
         return "", 204
 
     @app.get("/api/people/<person_key>/images")
