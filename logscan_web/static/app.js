@@ -59,6 +59,34 @@ function displayValue(value) {
   return value || "Not found in this log";
 }
 
+function uploadFailureType(message) {
+  if (message.startsWith("Choose a Kometa log, text, YAML, ZIP, TAR, or GZIP file.")) {
+    return "bad-filetype";
+  }
+  if (message.includes("does not appear to be a complete Kometa log file")
+    || message.includes("does not contain a complete Kometa log file")) {
+    return "invalid-kometa-log";
+  }
+  return "failed";
+}
+
+function uploadFailureSummary(failures) {
+  const counts = failures.reduce((summary, failure) => {
+    const type = uploadFailureType(failure.message);
+    summary[type] = (summary[type] || 0) + 1;
+    return summary;
+  }, {});
+  const labels = {
+    "bad-filetype": "skipped - bad filetype",
+    "invalid-kometa-log": "failed - not valid Kometa log file",
+    failed: "failed",
+  };
+  return Object.entries(labels)
+    .filter(([type]) => counts[type])
+    .map(([type, label]) => `${counts[type]} ${label}`)
+    .join("; ");
+}
+
  function formatOverviewTimestamp(unixTimestamp) {
   const date = new Date(unixTimestamp * 1000);
   const part = (value) => String(value).padStart(2, "0");
@@ -631,9 +659,11 @@ function renderBatchResults(scans, admin = false) {
   shareBatchResults.hidden = !publicBatchUrl;
   shareBatchResults.dataset.url = publicBatchUrl || "";
   const unscannedFiles = scans[0]?.unscanned_files || [];
-  batchUnscannedFiles.replaceChildren(...unscannedFiles.map((filename) => {
+  batchUnscannedFiles.replaceChildren(...unscannedFiles.map((entry) => {
     const item = document.createElement("li");
-    item.textContent = filename;
+    const filename = typeof entry === "string" ? entry : entry.filename;
+    const reason = typeof entry === "string" ? "Not scanned" : entry.reason;
+    item.textContent = `${filename} — ${reason}`;
     return item;
   }));
   batchUnscannedTitle.hidden = !unscannedFiles.length;
@@ -723,7 +753,10 @@ form.addEventListener("submit", async (event) => {
       const response = await fetch("/api/scan", { method: "POST", body });
       const data = await response.json().catch(() => ({}));
       if (!response.ok) {
-        failures.push(`${file.name}: ${data.error || "The scan could not be completed."}`);
+        failures.push({
+          filename: file.name,
+          message: data.error || "The scan could not be completed.",
+        });
       } else {
         const scans = data.scans || [data];
         scans.forEach((scan) => Object.assign(scan, { batch_result_url: data.batch_result_url, batch_admin_url: data.batch_admin_url, unscanned_files: data.unscanned_files || [] }));
@@ -731,13 +764,13 @@ form.addEventListener("submit", async (event) => {
         batchAdminUrl ||= data.batch_admin_url || "";
       }
     }
-    if (!completed.length) throw new Error(failures.join(" "));
+    if (!completed.length) throw new Error(uploadFailureSummary(failures));
     if (batchAdminUrl) {
       location.href = batchAdminUrl;
       return;
     }
     status.textContent = failures.length
-      ? `${completed.length} scan${completed.length === 1 ? "" : "s"} complete; ${failures.length} failed`
+      ? `${completed.length} scan${completed.length === 1 ? "" : "s"} complete; ${uploadFailureSummary(failures)}`
       : `${completed.length} scan${completed.length === 1 ? "" : "s"} complete`;
     batchScans = completed;
     if (batchScans.length > 1) renderBatchResults(batchScans);

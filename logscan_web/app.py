@@ -18,7 +18,7 @@ from werkzeug.middleware.proxy_fix import ProxyFix
 
 from .models import Finding
 from .recommendations import validate_redacted_config
-from .scanner import MAX_FILE_BYTES, ScanError, extract_missing_people, find_scannable_archive_logs, prepare_scan_input, scan_archive_logs, scan_log
+from .scanner import ALLOWED_SUFFIXES, ARCHIVE_SUFFIXES, MAX_FILE_BYTES, ScanError, extract_missing_people, find_scannable_archive_logs, prepare_scan_input, scan_archive_logs, scan_log
 from .storage import PeopleStore, PopularPeopleCheckStore, PopularPeopleExclusionStore, PopularPeopleFlagStore, ScanStore
 
 RETENTION_SECONDS = 48 * 60 * 60
@@ -396,7 +396,23 @@ def create_app() -> Flask:
         if Path(upload.filename).suffix.lower() == ".zip":
             with zipfile.ZipFile(BytesIO(content)) as archive:
                 scanned_names = {filename for filename, _content, _result in scans}
-                unscanned_files = [entry.filename for entry in archive.infolist() if not entry.is_dir() and entry.filename not in scanned_names]
+                for entry in archive.infolist():
+                    if entry.is_dir() or entry.filename in scanned_names:
+                        continue
+                    suffix = Path(entry.filename).suffix.lower()
+                    if suffix not in ALLOWED_SUFFIXES | ARCHIVE_SUFFIXES and not suffix.lstrip(".").isdigit():
+                        reason = "Bad file extension"
+                    else:
+                        with archive.open(entry) as member:
+                            entry_content = member.read()
+                        try:
+                            contained_scans = scan_archive_logs(entry.filename, entry_content)
+                        except ScanError:
+                            contained_scans = []
+                        if contained_scans:
+                            continue
+                        reason = "ZIP contains no valid Kometa logs" if suffix == ".zip" else "Not a valid Kometa log file"
+                    unscanned_files.append({"filename": entry.filename, "reason": reason})
         for filename, content, result in scans:
             if uploaded_by:
                 result.overview["uploaded_by"] = uploaded_by
