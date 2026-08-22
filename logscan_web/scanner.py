@@ -70,7 +70,13 @@ def _combine_nested_files(files: list[tuple[str, bytes]], archive_depth: int) ->
     prepared_files = []
     extracted_size = 0
     for filename, content in files:
-        _filename, prepared = prepare_scan_input(filename, content, archive_depth)
+        try:
+            _filename, prepared = prepare_scan_input(filename, content, archive_depth)
+        except ScanError as exc:
+            is_nested_archive = Path(filename).suffix.lower() in ARCHIVE_SUFFIXES or filename.lower().endswith((".tar.gz", ".tgz"))
+            if is_nested_archive and str(exc) == "The archive does not contain any files to scan.":
+                continue
+            raise
         extracted_size += len(prepared)
         if extracted_size > MAX_FILE_BYTES:
             raise ScanError("The extracted archive contents are larger than the 500 MB limit.")
@@ -342,6 +348,10 @@ def scan_archive_logs(filename: str, content_bytes: bytes) -> list[tuple[str, by
                     return results
             except zipfile.BadZipFile as exc:
                 raise ScanError("The selected ZIP file is invalid.") from exc
+            except ScanError as exc:
+                if depth > 0 and str(exc) == "The archive does not contain any files to scan.":
+                    return []
+                raise
         try:
             prepared_name, prepared_content = prepare_scan_input(name, content, depth)
             return [(prepared_name, prepared_content, scan_log(prepared_name, prepared_content))]

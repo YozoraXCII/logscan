@@ -39,12 +39,12 @@ class ScanStore:
         temporary.replace(directory / "result.json")
         return scan_id, delete_token
 
-    def create_batch(self, scans: list[dict]) -> tuple[str, str]:
+    def create_batch(self, scans: list[dict], unscanned_files: list[str] | None = None) -> tuple[str, str]:
         batch_id = secrets.token_urlsafe(18)
         admin_token = secrets.token_urlsafe(32)
         directory = self.root / "batches"
         directory.mkdir(exist_ok=True)
-        record = {"id": batch_id, "scans": scans, "admin_token_hash": hashlib.sha256(admin_token.encode()).hexdigest()}
+        record = {"id": batch_id, "scans": scans, "unscanned_files": unscanned_files or [], "admin_token_hash": hashlib.sha256(admin_token.encode()).hexdigest()}
         (directory / f"{batch_id}.json").write_text(json.dumps(record), encoding="utf-8")
         return batch_id, admin_token
 

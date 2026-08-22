@@ -5,7 +5,10 @@ import os
 import re
 import threading
 import time
+import zipfile
 from datetime import UTC, datetime, timedelta
+from io import BytesIO
+from pathlib import Path
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
@@ -323,10 +326,8 @@ def create_app() -> Flask:
         batch = store.get_batch(batch_id)
         if batch is None:
             abort(404)
-        public_scans = [
-            {key: scan[key] for key in ("id", "filename", "result_url", "expires_at")}
-            for scan in batch["scans"]
-        ]
+        public_url = url_for("batch_page", batch_id=batch_id, _external=True)
+        public_scans = [{key: scan[key] for key in ("id", "filename", "result_url", "expires_at")} | {"batch_public_url": public_url, "unscanned_files": batch.get("unscanned_files", [])} for scan in batch["scans"]]
         return render_template("index.html", initial_scan=None, initial_batch=public_scans)
 
     @app.get("/batch/<batch_id>/admin/<token>")
@@ -334,12 +335,17 @@ def create_app() -> Flask:
         batch = store.get_batch(batch_id, token)
         if batch is None:
             abort(404)
+        public_url = url_for("batch_page", batch_id=batch_id, _external=True)
+        private_url = url_for("batch_admin_page", batch_id=batch_id, token=token, _external=True)
         admin_scans = [
             {
                 "id": scan["id"],
                 "filename": scan["filename"],
                 "result_url": f"{scan['result_url']}#delete={scan['delete_token']}",
                 "expires_at": scan["expires_at"],
+                "batch_public_url": public_url,
+                "batch_private_url": private_url,
+                "unscanned_files": batch.get("unscanned_files", []),
             }
             for scan in batch["scans"]
         ]
@@ -375,7 +381,7 @@ def create_app() -> Flask:
             return jsonify(error="Choose a log file to scan."), 400
         try:
             content = upload.read()
-            scans = scan_archive_logs(upload.filename, content) if request.path == "/api/bot/scan" else []
+            scans = scan_archive_logs(upload.filename, content)
             if not scans:
                 filename, content = prepare_scan_input(upload.filename, content)
                 scans = [(filename, content, scan_log(filename, content))]
@@ -386,6 +392,11 @@ def create_app() -> Flask:
         uploaded_by_id = request.form.get("uploaded_by_id") if is_bot else None
         expires_at = int((datetime.now(UTC) + timedelta(seconds=RETENTION_SECONDS)).timestamp())
         payloads = []
+        unscanned_files = []
+        if Path(upload.filename).suffix.lower() == ".zip":
+            with zipfile.ZipFile(BytesIO(content)) as archive:
+                scanned_names = {filename for filename, _content, _result in scans}
+                unscanned_files = [entry.filename for entry in archive.infolist() if not entry.is_dir() and entry.filename not in scanned_names]
         for filename, content, result in scans:
             if uploaded_by:
                 result.overview["uploaded_by"] = uploaded_by
@@ -402,14 +413,19 @@ def create_app() -> Flask:
             payloads.append({"id": scan_id, "filename": result.filename, "recommendations": result.recommendations, "metadata": result.metadata, "overview": result.overview, "categories": result.categories, "result_url": result_url, "delete_token": delete_token, "expires_at": expires_at, "uploaded_by_bot": is_bot, "missing_people": missing_people})
         if not is_bot:
             notify_people_webhook([person for payload in payloads for person in payload["missing_people"]])
+        if len(payloads) > 1:
+            batch_id, admin_token = store.create_batch(payloads, unscanned_files)
+            response = {
+                "scans": payloads,
+                "batch_result_url": url_for("batch_page", batch_id=batch_id, _external=True),
+                "batch_admin_url": url_for("batch_admin_page", batch_id=batch_id, token=admin_token, _external=True),
+                "unscanned_files": unscanned_files,
+            }
+            return jsonify(response)
         if request.path == "/api/bot/scan":
             response = {"scans": payloads}
-            if len(payloads) > 1:
-                batch_id, admin_token = store.create_batch(payloads)
-                response["batch_result_url"] = url_for("batch_page", batch_id=batch_id, _external=True)
-                response["batch_admin_url"] = url_for("batch_admin_page", batch_id=batch_id, token=admin_token, _external=True)
             return jsonify(response)
-        return jsonify(payloads[0])
+        return jsonify({"scans": payloads}) if len(payloads) > 1 else jsonify(payloads[0])
 
     @app.get("/api/people")
     def people():

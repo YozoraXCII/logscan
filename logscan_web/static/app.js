@@ -13,6 +13,9 @@ const batchResults = document.querySelector("#batch-results");
 const batchResultLinks = document.querySelector("#batch-result-links");
 const batchResultsTitle = document.querySelector("#batch-results-title");
 const copyBatchResults = document.querySelector("#copy-batch-results");
+const shareBatchResults = document.querySelector("#share-batch-results");
+const batchUnscannedTitle = document.querySelector("#batch-unscanned-title");
+const batchUnscannedFiles = document.querySelector("#batch-unscanned-files");
 const getHelp = document.querySelector("#get-help");
 const helpDialog = document.querySelector("#help-dialog");
 const helpMessage = document.querySelector("#help-message");
@@ -618,11 +621,25 @@ function renderBatchResults(scans, admin = false) {
     const item = document.createElement("li");
     const link = document.createElement("a");
     link.href = scan.result_url || `/scan/${encodeURIComponent(scan.id)}`;
+    link.target = "_blank";
+    link.rel = "noopener noreferrer";
     link.textContent = scan.filename;
     item.append(link);
     batchResultLinks.append(item);
   });
+  const publicBatchUrl = scans[0]?.batch_public_url || scans[0]?.batch_result_url;
+  shareBatchResults.hidden = !publicBatchUrl;
+  shareBatchResults.dataset.url = publicBatchUrl || "";
+  const unscannedFiles = scans[0]?.unscanned_files || [];
+  batchUnscannedFiles.replaceChildren(...unscannedFiles.map((filename) => {
+    const item = document.createElement("li");
+    item.textContent = filename;
+    return item;
+  }));
+  batchUnscannedTitle.hidden = !unscannedFiles.length;
+  batchUnscannedFiles.hidden = !unscannedFiles.length;
   batchResults.hidden = false;
+  batchResults.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
 function renderResults(data) {
@@ -698,6 +715,7 @@ form.addEventListener("submit", async (event) => {
   try {
     const completed = [];
     const failures = [];
+    let batchAdminUrl = "";
     for (const [index, file] of files.entries()) {
       status.textContent = `Scanning ${index + 1} of ${files.length}: ${file.name}`;
       const body = new FormData();
@@ -707,10 +725,17 @@ form.addEventListener("submit", async (event) => {
       if (!response.ok) {
         failures.push(`${file.name}: ${data.error || "The scan could not be completed."}`);
       } else {
-        completed.push(data);
+        const scans = data.scans || [data];
+        scans.forEach((scan) => Object.assign(scan, { batch_result_url: data.batch_result_url, batch_admin_url: data.batch_admin_url, unscanned_files: data.unscanned_files || [] }));
+        completed.push(...scans);
+        batchAdminUrl ||= data.batch_admin_url || "";
       }
     }
     if (!completed.length) throw new Error(failures.join(" "));
+    if (batchAdminUrl) {
+      location.href = batchAdminUrl;
+      return;
+    }
     status.textContent = failures.length
       ? `${completed.length} scan${completed.length === 1 ? "" : "s"} complete; ${failures.length} failed`
       : `${completed.length} scan${completed.length === 1 ? "" : "s"} complete`;
@@ -773,6 +798,17 @@ copyBatchResults.addEventListener("click", async () => {
     copyBatchResults.title = "Copied";
   } catch {
     alert("Your browser could not copy the result links.");
+  }
+});
+shareBatchResults.addEventListener("click", async () => {
+  const url = shareBatchResults.dataset.url;
+  if (!url) return;
+  try {
+    if (navigator.share) await navigator.share({ title: "Kometa Logscan batch results", url });
+    else await navigator.clipboard.writeText(url);
+    shareBatchResults.title = "Public batch link copied";
+  } catch (error) {
+    if (error.name !== "AbortError") alert("Your browser could not share the batch link.");
   }
 });
 function downloadConfig() {

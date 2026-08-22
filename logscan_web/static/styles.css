@@ -177,7 +177,7 @@ h1 { margin: 0; max-width: 740px; font-size: clamp(2.5rem, 6vw, 4.35rem); line-h
 .batch-results a { color: var(--accent-bright); font-weight: 600; }
 .results-heading { display: flex; justify-content: space-between; align-items: end; gap: 24px; }
 .results-actions { display: flex; gap: 9px; }
-h2 { margin: 0; font-size: clamp(2rem, 4vw, 3rem); letter-spacing: -.04em; }
+h2 { margin: 0; font-size: clamp(1.5rem, 3.5vw, 2.5rem); letter-spacing: -.04em; }
 .secondary-button { padding: 11px 15px; border: 1px solid var(--border); background: var(--surface-strong); color: #dce1f5; }
 .icon-action { width: 42px; height: 42px; padding: 0; display: inline-grid; place-items: center; }
 #get-help { border-color: rgba(74, 222, 128, .38); background: rgba(74, 222, 128, .14); color: #bbf7d0; }
@@ -274,6 +274,11 @@ details[open] .chevron { transform: rotate(90deg); }
 .download-dialog-actions { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; padding: 24px; }
 .download-dialog-actions button { min-height: 84px; display: flex; flex-direction: column; justify-content: center; gap: 8px; }
 .download-dialog-actions i { font-size: 1.2rem; }
+.batch-results-actions { display: flex; align-items: center; gap: 8px; }
+.batch-results-actions .compact { min-height: 38px; padding: 0 12px; display: inline-flex; align-items: center; }
+#results, #batch-results { scroll-margin-top: 28px; }
+.batch-unscanned { margin-top: 36px; color: var(--muted); font-size: .78rem; font-style: italic; }
+.batch-unscanned + .batch-unscanned { margin-top: 6px; }
 .viewer-toolbar { min-height: 66px; padding: 10px 18px 10px 24px; display: flex; align-items: center; justify-content: space-between; gap: 20px; border-bottom: 1px solid var(--border); background: #0e1222; }
 .viewer-controls, .highlight-mode-control, .section-jump-control { display: flex; align-items: center; gap: 9px; }
 .viewer-controls { gap: 22px; }
