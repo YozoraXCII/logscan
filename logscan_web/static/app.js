@@ -21,10 +21,9 @@ const summaryGrid = document.querySelector("#summary-grid");
 const sectionNav = document.querySelector("#section-nav");
 const sectionContent = document.querySelector("#section-content");
 const logViewer = document.querySelector("#log-viewer");
-const configViewer = document.querySelector("#config-viewer");
 const logCode = document.querySelector("#log-code");
-const configCode = document.querySelector("#config-code");
-const lineJump = document.querySelector("#line-jump");
+const highlightMode = document.querySelector("#highlight-mode");
+const nextHighlight = document.querySelector("#next-highlight");
 const sectionJump = document.querySelector("#section-jump");
 const viewerPosition = document.querySelector("#viewer-position");
 let currentFile = null;
@@ -37,6 +36,10 @@ let viewerFirstLine = 1;
 let viewerLastLine = 1;
 let loadingViewerChunk = false;
 let extractedConfig = "";
+let viewerMode = "log";
+let currentRecommendations = [];
+let schemaValidationFailures = [];
+let currentOverview = {};
 let batchScans = [];
 const VIEWER_CHUNK_SIZE = 1000;
 
@@ -333,15 +336,27 @@ function appendYamlHighlight(container, line) {
   }
 }
 
-async function openConfigViewer() {
+function updateViewerMode(mode) {
+  viewerMode = mode;
+  const isConfig = mode === "config";
+  document.querySelector("#viewer-kind").textContent = isConfig ? "Extracted configuration" : "Log viewer";
+  document.querySelector("#viewer-filename").textContent = isConfig ? "config.yml" : (currentFile?.name || document.querySelector("#results-title").textContent);
+  const toggle = document.querySelector("#toggle-viewer-content");
+  toggle.setAttribute("aria-label", isConfig ? "View log" : "View config");
+  toggle.title = isConfig ? "View log" : "View config";
+  document.querySelector(".viewer-toolbar").hidden = isConfig;
+}
+
+async function showConfigInViewer() {
   const lines = await loadLogLines();
   extractedConfig = extractConfig(lines);
-  configCode.replaceChildren(
+  updateViewerMode("config");
+  logCode.replaceChildren(
     extractedConfig
       ? createConfigRows(extractedConfig)
       : document.createTextNode("No redacted config block was found in this log."),
   );
-  configViewer.showModal();
+  logCode.scrollTop = 0;
 }
 
 function populateSectionJump() {
@@ -366,6 +381,19 @@ function createLogRows(first, last) {
     row.className = "log-line";
     row.dataset.line = lineNumber;
     if (lineNumber >= highlightedRange.start && lineNumber <= highlightedRange.end) row.classList.add("highlighted");
+    const matchingRecommendations = recommendationsForLine(lineNumber);
+    const schemaFailures = schemaFailuresForLine(lineNumber);
+    const matchingItems = [...matchingRecommendations, ...schemaFailures];
+    if (matchingItems.length) {
+      row.classList.add("recommendation-line", ...matchingRecommendations.map((item) => `recommendation-${item.severity}`));
+      if (schemaFailures.length) row.classList.add("schema-validation-line");
+      row.tabIndex = 0;
+      row.title = "View details";
+      row.addEventListener("click", () => openRecommendationDialog(matchingItems));
+      row.addEventListener("keydown", (event) => {
+        if (event.key === "Enter" || event.key === " ") { event.preventDefault(); openRecommendationDialog(matchingItems); }
+      });
+    }
     const number = document.createElement("span");
     number.className = "line-number";
     number.textContent = lineNumber;
@@ -375,6 +403,81 @@ function createLogRows(first, last) {
     fragment.append(row);
   }
   return fragment;
+}
+
+function recommendationLineNumbers(item) {
+  const matches = `${item.message || ""}`.matchAll(/(?:line number\(s\)|log line number\(s\)):\s*([\d,\-\s]+)/gi);
+  const values = [...(item.evidence_lines || [])];
+  for (const match of matches) {
+    for (const range of match[1].matchAll(/(\d+)(?:-(\d+))?/g)) {
+      const start = Number(range[1]);
+      const end = Number(range[2] || range[1]);
+      for (let line = start; line <= end; line += 1) values.push(line);
+    }
+  }
+  return new Set(values);
+}
+
+function recommendationsForLine(lineNumber) {
+  const selectedSeverity = highlightMode.value;
+  return currentRecommendations.filter((item) => (selectedSeverity === "all" || item.severity === selectedSeverity)
+    && ["critical", "error", "warning"].includes(item.severity)
+    && recommendationLineNumbers(item).has(lineNumber));
+}
+
+function schemaFailuresForLine(lineNumber) {
+  return schemaValidationFailures.filter((failure) => failure.line === lineNumber).map((failure) => ({
+    severity: "schema validation",
+    title: "Kometa config schema validation failed",
+    message: `Schema validation failure\n\n${failure.message}${failure.path ? `\n\nConfig path: ${failure.path}` : ""}`,
+    evidence_lines: [failure.line],
+  }));
+}
+
+function highlightedLineNumbers() {
+  const lines = new Set();
+  currentRecommendations.forEach((item) => {
+    if ((highlightMode.value === "all" || item.severity === highlightMode.value)
+      && ["critical", "error", "warning"].includes(item.severity)) {
+      recommendationLineNumbers(item).forEach((lineNumber) => lines.add(lineNumber));
+    }
+  });
+  schemaValidationFailures.forEach((failure) => lines.add(failure.line));
+  return [...lines].filter((lineNumber) => lineNumber >= 1 && lineNumber <= currentLogLines.length)
+    .sort((left, right) => left - right);
+}
+
+function updateNextHighlightControl() {
+  const hasHighlights = currentLogLines && highlightedLineNumbers().length > 0;
+  nextHighlight.disabled = !hasHighlights;
+  nextHighlight.title = hasHighlights ? "Go to the next highlighted line" : "No lines match this highlight mode";
+}
+
+function goToNextHighlightedLine() {
+  if (!currentLogLines) return;
+  const lines = highlightedLineNumbers();
+  if (!lines.length) return;
+  const nextLine = lines.find((lineNumber) => lineNumber > highlightedRange.start) || lines[0];
+  renderLogWindow(nextLine);
+}
+
+function openRecommendationDialog(items) {
+  const item = items[0];
+  document.querySelector("#recommendation-severity").textContent = items.length === 1
+    ? `${item.severity} recommendation`
+    : `${items.length} recommendations`;
+  document.querySelector("#recommendation-title").textContent = items.length === 1 ? item.title : "Recommendations for this line";
+  const content = document.querySelector("#recommendation-content");
+  content.replaceChildren();
+  items.forEach((recommendation) => {
+    if (items.length > 1) {
+      const title = document.createElement("h3");
+      title.textContent = recommendation.title;
+      content.append(title);
+    }
+    content.append(recommendationBody(recommendation.message, recommendation.evidence_lines));
+  });
+  document.querySelector("#recommendation-dialog").showModal();
 }
 
 function updateViewerPosition() {
@@ -394,9 +497,8 @@ function renderLogWindow(targetStart, targetEnd = targetStart) {
   if (viewerLastLine === total) viewerFirstLine = Math.max(1, viewerLastLine - VIEWER_CHUNK_SIZE + 1);
   const fragment = createLogRows(viewerFirstLine, viewerLastLine);
   logCode.replaceChildren(fragment);
-  lineJump.max = total;
-  lineJump.value = startTarget;
   updateViewerPosition();
+  updateNextHighlightControl();
   requestAnimationFrame(() => {
     logCode.querySelector(`[data-line="${startTarget}"]`)?.scrollIntoView({ block: "center" });
   });
@@ -429,9 +531,8 @@ function loadAdjacentLogChunk(direction) {
 async function openLogViewer(targetStart = 1, targetEnd = targetStart) {
   try {
     await loadLogLines();
-    document.querySelector("#viewer-filename").textContent =
-      currentFile?.name || document.querySelector("#results-title").textContent;
     if (!logViewer.open) logViewer.showModal();
+    updateViewerMode("log");
     renderLogWindow(targetStart, targetEnd);
   } catch (error) {
     alert(error.message);
@@ -528,6 +629,8 @@ function renderResults(data) {
   deleteToken = new URLSearchParams(location.hash.slice(1)).get("delete");
   updateRetentionCountdown(data);
   const { metadata, recommendations, overview = {}, categories = defaultGroups } = data;
+  currentRecommendations = recommendations;
+  currentOverview = overview;
   if (data.expires_at) {
     overview.auto_delete = formatOverviewTimestamp(data.expires_at);
   }
@@ -639,7 +742,10 @@ form.addEventListener("submit", async (event) => {
 });
 
 document.querySelector("#view-log").addEventListener("click", () => openLogViewer(1));
-document.querySelector("#view-config").addEventListener("click", () => openConfigViewer().catch((error) => alert(error.message)));
+document.querySelector("#toggle-viewer-content").addEventListener("click", () => {
+  if (viewerMode === "config") openLogViewer(highlightedRange.start);
+  else showConfigInViewer().catch((error) => alert(error.message));
+});
 getHelp.addEventListener("click", () => {
   if (!currentScanId) return;
   const filename = document.querySelector("#results-title").textContent;
@@ -669,15 +775,58 @@ copyBatchResults.addEventListener("click", async () => {
     alert("Your browser could not copy the result links.");
   }
 });
-document.querySelector("#close-config").addEventListener("click", () => configViewer.close());
-document.querySelector("#download-config").addEventListener("click", () => {
-  if (!extractedConfig) return;
+function downloadConfig() {
+  if (!extractedConfig) return false;
   const link = document.createElement("a");
   link.href = URL.createObjectURL(new Blob([extractedConfig], { type: "text/yaml;charset=utf-8" }));
-  link.download = "config-extract.yml";
+  link.download = downloadFilename("config");
   link.click();
   URL.revokeObjectURL(link.href);
+  return true;
+}
+function filenamePart(value) {
+  return String(value || "").trim().replace(/[<>:"/\\|?*\x00-\x1f]/g, "");
+}
+
+function downloadFilename() {
+  const originalName = currentFile?.name || document.querySelector("#results-title").textContent;
+  const name = filenamePart(originalName.replace(/\.[^.]+$/, ""));
+  const uploader = filenamePart(currentOverview.uploaded_by);
+  const now = new Date();
+  const part = (value) => String(value).padStart(2, "0");
+  const timestamp = `${now.getFullYear()}${part(now.getMonth() + 1)}${part(now.getDate())}-${part(now.getHours())}${part(now.getMinutes())}${part(now.getSeconds())}`;
+  return [name || "log", ...(uploader ? [uploader] : []), timestamp].join("-") + ".log";
+}
+
+async function downloadLog() {
+  const lines = await loadLogLines();
+  const link = document.createElement("a");
+  link.href = URL.createObjectURL(new Blob([lines.join("\n")], { type: "text/plain;charset=utf-8" }));
+  link.download = downloadFilename();
+  link.click();
+  URL.revokeObjectURL(link.href);
+}
+document.querySelector("#open-download").addEventListener("click", () => document.querySelector("#download-dialog").showModal());
+document.querySelector("#download-log-option").addEventListener("click", async () => {
+  try { await downloadLog(); document.querySelector("#download-dialog").close(); } catch (error) { alert(error.message); }
 });
+document.querySelector("#download-config-option").addEventListener("click", async () => {
+  try {
+    if (!extractedConfig) extractedConfig = extractConfig(await loadLogLines());
+    if (!downloadConfig()) alert("No redacted config block was found in this log.");
+    else document.querySelector("#download-dialog").close();
+  } catch (error) { alert(error.message); }
+});
+document.querySelector("#download-both-option").addEventListener("click", async () => {
+  try {
+    if (!extractedConfig) extractedConfig = extractConfig(await loadLogLines());
+    await downloadLog();
+    if (!downloadConfig()) alert("The log was downloaded, but it contains no redacted config block.");
+    document.querySelector("#download-dialog").close();
+  } catch (error) { alert(error.message); }
+});
+document.querySelector("#close-download").addEventListener("click", () => document.querySelector("#download-dialog").close());
+document.querySelector("#close-recommendation").addEventListener("click", () => document.querySelector("#recommendation-dialog").close());
 document.querySelector("#delete-scan").addEventListener("click", async () => {
   if (!currentScanId || !deleteToken || !await ConfirmDialog.show({ title: "Delete this scan?", message: "This permanently deletes the log and its scan results.", confirmText: "Delete scan" })) return;
   const response = await fetch(`/api/scans/${encodeURIComponent(currentScanId)}`, {
@@ -705,10 +854,10 @@ window.addEventListener("hashchange", () => {
   document.querySelector("#delete-scan").hidden = !deleteToken;
 });
 document.querySelector("#close-viewer").addEventListener("click", () => logViewer.close());
-document.querySelector("#line-jump-form").addEventListener("submit", (event) => {
-  event.preventDefault();
-  renderLogWindow(Number(lineJump.value), Number(lineJump.value));
+highlightMode.addEventListener("change", () => {
+  if (currentLogLines && viewerMode === "log") renderLogWindow(highlightedRange.start);
 });
+nextHighlight.addEventListener("click", goToNextHighlightedLine);
 sectionJump.addEventListener("change", () => {
   if (!sectionJump.value) return;
   const targetLine = Number(sectionJump.value);
@@ -717,13 +866,17 @@ sectionJump.addEventListener("change", () => {
 logViewer.addEventListener("click", (event) => {
   if (event.target === logViewer) logViewer.close();
 });
-configViewer.addEventListener("click", (event) => {
-  if (event.target === configViewer) configViewer.close();
+document.querySelector("#recommendation-dialog").addEventListener("click", (event) => {
+  if (event.target === document.querySelector("#recommendation-dialog")) document.querySelector("#recommendation-dialog").close();
+});
+document.querySelector("#download-dialog").addEventListener("click", (event) => {
+  if (event.target === document.querySelector("#download-dialog")) document.querySelector("#download-dialog").close();
 });
 helpDialog.addEventListener("click", (event) => {
   if (event.target === helpDialog) helpDialog.close();
 });
 logCode.addEventListener("scroll", () => {
+  if (viewerMode !== "log") return;
   if (logCode.scrollTop + logCode.clientHeight >= logCode.scrollHeight - 240) {
     loadAdjacentLogChunk("next");
   } else if (logCode.scrollTop <= 120) {

@@ -14,6 +14,7 @@ from flask import Flask, abort, jsonify, render_template, request, send_file, ur
 from werkzeug.middleware.proxy_fix import ProxyFix
 
 from .models import Finding
+from .recommendations import validate_redacted_config
 from .scanner import MAX_FILE_BYTES, ScanError, extract_missing_people, find_scannable_archive_logs, prepare_scan_input, scan_archive_logs, scan_log
 from .storage import PeopleStore, PopularPeopleCheckStore, PopularPeopleExclusionStore, PopularPeopleFlagStore, ScanStore
 
@@ -501,6 +502,20 @@ def create_app() -> Flask:
         if path is None:
             abort(404)
         return send_file(path, mimetype="text/plain; charset=utf-8", conditional=True)
+
+    @app.post("/api/scans/<scan_id>/validate-config")
+    def validate_stored_config(scan_id):
+        path = store.log_path(scan_id)
+        if path is None:
+            abort(404)
+        try:
+            failures = validate_redacted_config(path.read_text(encoding="utf-8", errors="replace"))
+        except ValueError as exc:
+            return jsonify(error=str(exc)), 400
+        except RuntimeError as exc:
+            app.logger.warning("Config validation failed: %s", exc)
+            return jsonify(error=str(exc)), 502
+        return jsonify(failures=failures)
 
     @app.delete("/api/scans/<scan_id>")
     def delete_scan(scan_id):

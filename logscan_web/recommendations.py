@@ -1,7 +1,16 @@
 """Single-source recommendation catalogue."""
 from __future__ import annotations
+import json
 import re
 from dataclasses import dataclass
+from urllib.error import HTTPError, URLError
+from urllib.request import Request, urlopen
+
+import yaml
+from jsonschema import Draft7Validator
+
+
+KOMETA_CONFIG_SCHEMA_URL = "https://raw.githubusercontent.com/Kometa-Team/Kometa/refs/heads/nightly/json-schema/config-schema.json"
 
 @dataclass(frozen=True)
 class RecommendationRule:
@@ -17,11 +26,93 @@ class RecommendationRule:
         needles = tuple(value.lower() for value in self.captures)
         return [number for number, line in enumerate(content.splitlines(), start=1) if any(needle in line.lower() for needle in needles)] if needles else []
 
+
+def extract_redacted_config(log_content: str) -> tuple[str, list[int]]:
+    """Return Kometa's redacted config block and its source log-line numbers."""
+    started = False
+    extracted: list[tuple[str, int]] = []
+    tagged_config = re.compile(r"\[config\.py:\d+\]\s+\[[A-Z]+\]\s*\|(.*)$")
+    for line_number, line in enumerate(log_content.splitlines(), start=1):
+        if not started:
+            if "Redacted Config" in line:
+                started = True
+            continue
+        if "Config Warning:" in line or "Initializing cache database at" in line:
+            break
+        match = tagged_config.search(line)
+        if not match:
+            break
+        extracted.append((match.group(1).rstrip(" |"), line_number))
+    if len(extracted) > 1:
+        extracted.pop()
+    return "\n".join(line[1:] if line.startswith(" ") else line for line, _number in extracted), [
+        line_number for _line, line_number in extracted
+    ]
+
+
+def _node_at_path(node, path, unexpected_property: str | None = None):
+    """Find the YAML node corresponding to a JSON Schema validation path."""
+    for component in path:
+        if isinstance(node, yaml.MappingNode):
+            pair = next((pair for pair in node.value if pair[0].value == str(component)), None)
+            if pair is None:
+                break
+            node = pair[1]
+        elif isinstance(node, yaml.SequenceNode) and isinstance(component, int) and component < len(node.value):
+            node = node.value[component]
+        else:
+            break
+    if unexpected_property and isinstance(node, yaml.MappingNode):
+        pair = next((pair for pair in node.value if pair[0].value == unexpected_property), None)
+        if pair is not None:
+            return pair[0]
+    return node
+
+
+def validate_redacted_config(log_content: str) -> list[dict[str, str | int]]:
+    """Validate a log's extracted config against the latest Kometa nightly schema.
+
+    The schema is deliberately downloaded for every call; it is not cached so the
+    validation always reflects the current nightly branch.
+    """
+    config_text, log_lines = extract_redacted_config(log_content)
+    if not config_text.strip():
+        raise ValueError("No redacted configuration block was found in this log.")
+    try:
+        config = yaml.safe_load(config_text)
+        config_node = yaml.compose(config_text)
+    except yaml.YAMLError as exc:
+        mark = getattr(exc, "problem_mark", None)
+        line = log_lines[mark.line] if mark and mark.line < len(log_lines) else log_lines[0]
+        return [{"line": line, "message": f"Invalid YAML: {getattr(exc, 'problem', str(exc))}", "path": ""}]
+    try:
+        schema_request = Request(
+            KOMETA_CONFIG_SCHEMA_URL,
+            headers={"Accept": "application/json", "Cache-Control": "no-cache", "User-Agent": "Kometa-Logscan/1.0"},
+        )
+        with urlopen(schema_request, timeout=15) as response:
+            schema = json.loads(response.read().decode("utf-8"))
+    except (HTTPError, URLError, TimeoutError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise RuntimeError("The latest Kometa configuration schema could not be fetched.") from exc
+
+    failures = []
+    for error in sorted(Draft7Validator(schema).iter_errors(config), key=lambda item: list(item.absolute_path)):
+        unexpected = None
+        if error.validator == "additionalProperties":
+            match = re.search(r"'([^']+)' was unexpected", error.message)
+            unexpected = match.group(1) if match else None
+        node = _node_at_path(config_node, error.absolute_path, unexpected)
+        config_line = node.start_mark.line if node is not None else 0
+        log_line = log_lines[config_line] if config_line < len(log_lines) else log_lines[0]
+        path = ".".join(str(part) for part in error.absolute_path)
+        failures.append({"line": log_line, "message": error.message, "path": path})
+    return failures
+
 # Each record contains its category, issue description, proposed solution, and capture text.
 RULE_SPECS = (
     {'id': 'anidb_connection', 'category': 'error', 'title': 'AniDB connection test failed', 'description': "Kometa's AniDB connectivity test failed, so AniDB-backed features cannot retrieve data.", 'solution': 'Kometa could not reach AniDB.', 'captures': ('No Anime Found for AniDB ID: 69',)},
     {'id': 'anidb_auth', 'category': 'error', 'title': 'AniDB authentication failed', 'description': 'AniDB rejected the configured credentials or settings.', 'solution': 'Check the AniDB settings in config.yml.', 'captures': ('Config Error: anidb sub-attribute', 'AniDB Error: Login failed')},
-    {'id': 'api_key_missing', 'category': 'critical', 'title': 'Required API key is missing', 'description': 'A required third-party service API key is blank.', 'solution': 'Add the required API key to the affected service configuration.', 'captures': ('apikey is blank',)},
+    {'id': 'api_key_missing', 'category': 'error', 'title': 'Required API key is missing', 'description': 'A required third-party service API key is blank.', 'solution': 'Add the required API key to the affected service configuration.', 'captures': ('apikey is blank',)},
     {'id': 'plex_version', 'category': 'critical', 'title': 'Incompatible Plex version detected', 'description': 'The detected Plex version is known to cause Kometa compatibility problems.', 'solution': 'Upgrade or downgrade Plex to a compatible release.', 'captures': ('1.32.7', 'Connected to server')},
     {'id': 'cache_disabled', 'category': 'advice', 'title': 'Kometa cache is disabled', 'description': 'Kometa caching is disabled, which can increase processing time and external API traffic.', 'solution': 'Enable the cache to improve performance and reduce API requests.', 'captures': ('cache: false',)},
     {'id': 'checkfiles', 'category': 'advice', 'title': 'Diagnostic file check enabled', 'description': 'Diagnostic file checking is enabled in this run.', 'solution': 'This diagnostic mode is intended for support investigation.', 'captures': ('checkFiles=1',)},
