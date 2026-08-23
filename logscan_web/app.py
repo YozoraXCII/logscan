@@ -690,6 +690,12 @@ def create_app() -> Flask:
             return jsonify(error="The batch was not found or the private token is invalid."), 403
         return "", 204
 
+    @app.errorhandler(404)
+    def not_found(_error):
+        if request.path.startswith("/api/"):
+            return jsonify(error="The requested resource was not found."), 404
+        return render_template("404.html"), 404
+
     @app.errorhandler(413)
     def too_large(_error):
         return jsonify(error="The selected file is larger than the 100 MB limit."), 413
