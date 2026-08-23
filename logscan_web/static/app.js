@@ -14,6 +14,7 @@ const batchResultLinks = document.querySelector("#batch-result-links");
 const batchResultsTitle = document.querySelector("#batch-results-title");
 const copyBatchResults = document.querySelector("#copy-batch-results");
 const shareBatchResults = document.querySelector("#share-batch-results");
+const deleteBatch = document.querySelector("#delete-batch");
 const batchUnscannedTitle = document.querySelector("#batch-unscanned-title");
 const batchUnscannedFiles = document.querySelector("#batch-unscanned-files");
 const getHelp = document.querySelector("#get-help");
@@ -645,7 +646,11 @@ function renderBatchResults(scans, admin = false) {
   }
   batchResultLinks.replaceChildren();
   batchResultsTitle.textContent = admin ? "Private deletion links" : "Uploaded scan results";
-  scans.forEach((scan) => {
+  const sortedScans = [...scans].sort((left, right) => left.filename.localeCompare(right.filename, undefined, {
+    numeric: true,
+    sensitivity: "base",
+  }));
+  sortedScans.forEach((scan) => {
     const item = document.createElement("li");
     const link = document.createElement("a");
     link.href = scan.result_url || `/scan/${encodeURIComponent(scan.id)}`;
@@ -658,6 +663,7 @@ function renderBatchResults(scans, admin = false) {
   const publicBatchUrl = scans[0]?.batch_public_url || scans[0]?.batch_result_url;
   shareBatchResults.hidden = !publicBatchUrl;
   shareBatchResults.dataset.url = publicBatchUrl || "";
+  deleteBatch.hidden = !scans[0]?.batch_private_url;
   const unscannedFiles = scans[0]?.unscanned_files || [];
   batchUnscannedFiles.replaceChildren(...unscannedFiles.map((entry) => {
     const item = document.createElement("li");
@@ -743,30 +749,21 @@ form.addEventListener("submit", async (event) => {
   status.textContent = `Scanning 0 of ${files.length} logs…`;
   status.classList.remove("error");
   try {
-    const completed = [];
     const failures = [];
-    let batchAdminUrl = "";
-    for (const [index, file] of files.entries()) {
-      status.textContent = `Scanning ${index + 1} of ${files.length}: ${file.name}`;
-      const body = new FormData();
-      body.append("log", file);
-      const response = await fetch("/api/scan", { method: "POST", body });
-      const data = await response.json().catch(() => ({}));
-      if (!response.ok) {
-        failures.push({
-          filename: file.name,
-          message: data.error || "The scan could not be completed.",
-        });
-      } else {
-        const scans = data.scans || [data];
-        scans.forEach((scan) => Object.assign(scan, { batch_result_url: data.batch_result_url, batch_admin_url: data.batch_admin_url, unscanned_files: data.unscanned_files || [] }));
-        completed.push(...scans);
-        batchAdminUrl ||= data.batch_admin_url || "";
-      }
+    status.textContent = `Scanning ${files.length} log${files.length === 1 ? "" : "s"}…`;
+    const body = new FormData();
+    files.forEach((file) => body.append("log", file));
+    const response = await fetch("/api/scan", { method: "POST", body });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      failures.push({ filename: files.map((file) => file.name).join(", "), message: data.error || "The scan could not be completed." });
     }
+    const scans = response.ok ? (data.scans || [data]) : [];
+    scans.forEach((scan) => Object.assign(scan, { batch_result_url: data.batch_result_url, batch_admin_url: data.batch_admin_url, unscanned_files: data.unscanned_files || [] }));
+    const completed = scans;
     if (!completed.length) throw new Error(uploadFailureSummary(failures));
-    if (batchAdminUrl) {
-      location.href = batchAdminUrl;
+    if (data.batch_admin_url) {
+      location.href = data.batch_admin_url;
       return;
     }
     status.textContent = failures.length
@@ -843,6 +840,22 @@ shareBatchResults.addEventListener("click", async () => {
   } catch (error) {
     if (error.name !== "AbortError") alert("Your browser could not share the batch link.");
   }
+});
+deleteBatch.addEventListener("click", async () => {
+  const privateUrl = batchScans[0]?.batch_private_url;
+  if (!privateUrl || !await ConfirmDialog.show({
+    title: "Delete all batch logs?",
+    message: "This permanently deletes every log and scan result in this batch.",
+    confirmText: "Delete all",
+  })) return;
+  const [, , batchId, , token] = new URL(privateUrl).pathname.split("/");
+  const response = await fetch(`/api/batches/${encodeURIComponent(batchId)}/admin/${encodeURIComponent(token)}`, { method: "DELETE" });
+  if (!response.ok) {
+    const payload = await response.json().catch(() => ({}));
+    alert(payload.error || "Unable to delete the batch.");
+    return;
+  }
+  location.assign("/");
 });
 function downloadConfig() {
   if (!extractedConfig) return false;

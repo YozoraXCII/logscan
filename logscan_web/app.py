@@ -379,14 +379,24 @@ def create_app() -> Flask:
         is_bot = bot_request_is_authorized()
         if request.path == "/api/bot/scan" and not is_bot:
             return jsonify(error="Invalid API key."), 401
-        upload = request.files.get("log")
-        if upload is None or not upload.filename:
+        uploads = [upload for upload in request.files.getlist("log") if upload.filename]
+        if not uploads:
             return jsonify(error="Choose a log file to scan."), 400
+        upload = uploads[0]
+        upload_filename = upload.filename
         try:
-            content = upload.read()
-            scans = scan_archive_logs(upload.filename, content)
+            if len(uploads) == 1:
+                content = upload.read()
+            else:
+                bundled_uploads = BytesIO()
+                with zipfile.ZipFile(bundled_uploads, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+                    for item in uploads:
+                        archive.writestr(item.filename, item.read())
+                content = bundled_uploads.getvalue()
+                upload_filename = "website-log-batch.zip"
+            scans = scan_archive_logs(upload_filename, content)
             if not scans:
-                filename, content = prepare_scan_input(upload.filename, content)
+                filename, content = prepare_scan_input(upload_filename, content)
                 scans = [(filename, content, scan_log(filename, content))]
         except ScanError as exc:
             return jsonify(error=str(exc)), 400
@@ -396,7 +406,7 @@ def create_app() -> Flask:
         expires_at = int((datetime.now(UTC) + timedelta(seconds=RETENTION_SECONDS)).timestamp())
         payloads = []
         unscanned_files = []
-        if Path(upload.filename).suffix.lower() == ".zip":
+        if Path(upload_filename).suffix.lower() == ".zip":
             with zipfile.ZipFile(BytesIO(content)) as archive:
                 scanned_names = {filename for filename, _content, _result in scans}
                 for entry in archive.infolist():
@@ -576,6 +586,12 @@ def create_app() -> Flask:
         token = request.headers.get("X-Delete-Token", "")
         if not token or not store.delete(scan_id, token):
             return jsonify(error="The scan was not found or the delete token is invalid."), 403
+        return "", 204
+
+    @app.delete("/api/batches/<batch_id>/admin/<token>")
+    def delete_batch(batch_id, token):
+        if not store.delete_batch(batch_id, token):
+            return jsonify(error="The batch was not found or the private token is invalid."), 403
         return "", 204
 
     @app.errorhandler(413)

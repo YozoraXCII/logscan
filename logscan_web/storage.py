@@ -57,6 +57,19 @@ class ScanStore:
             return None
         return record
 
+    def delete_batch(self, batch_id: str, admin_token: str) -> bool:
+        """Delete every scan in an authorized batch and its batch record."""
+        record = self.get_batch(batch_id, admin_token)
+        if record is None:
+            return False
+        for scan in record["scans"]:
+            self.delete(scan["id"], scan["delete_token"])
+        try:
+            (self.root / "batches" / f"{batch_id}.json").unlink()
+        except FileNotFoundError:
+            return False
+        return True
+
     def get(self, scan_id: str) -> dict | None:
         if not self._valid_id(scan_id):
             return None
