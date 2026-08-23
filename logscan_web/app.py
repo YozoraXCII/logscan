@@ -558,18 +558,15 @@ def create_app() -> Flask:
             person for person in popular_people()
             if person.get("name", "").casefold() not in primary_images
         ]
-        export = [{
-            "name": person["name"],
-            "tmdb_id": person["tmdb_id"],
-            "tmdb_person_url": person["tmdb_person_url"],
-            "tmdb_image_url": person["tmdb_image_url"],
-            "imdb_person_url": person["imdb_person_url"],
-        } for person in popular_people_payload(missing_people, popular_people_flags.list())]
+        export = "\n".join(
+            f"{person['tmdb_id']}|{person['name']}"
+            for person in popular_people_payload(missing_people, popular_people_flags.list())
+        )
         return send_file(
-            BytesIO(json.dumps(export, indent=2).encode("utf-8")),
-            mimetype="application/json",
+            BytesIO(export.encode("utf-8")),
+            mimetype="text/plain",
             as_attachment=True,
-            download_name="missing-trending-people.json",
+            download_name="missing-trending-people.txt",
         )
 
     @app.post("/api/people/popular/<int:person_id>/exclude")
