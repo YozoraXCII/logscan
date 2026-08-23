@@ -73,6 +73,14 @@ def add_missing_people_recommendations(result, candidates: list[dict], repositor
         result.overview["recommendation_count"] = len(result.recommendations)
 
 
+def _people_needing_repository_images(candidates: list[dict], repository_people: dict[str, str] | None) -> list[dict]:
+    """Return log candidates absent from the primary People Images repository."""
+    if repository_people is None:
+        # Keep the existing reporting path when GitHub is temporarily unavailable.
+        return candidates
+    return [candidate for candidate in candidates if candidate["name"].casefold() not in repository_people]
+
+
 def load_local_env() -> None:
     """Load a local development .env without overriding real process settings."""
     env_file = os.path.join(os.getcwd(), ".env")
@@ -500,16 +508,21 @@ def create_app() -> Flask:
                 result.overview["uploaded_by_id"] = uploaded_by_id
                 result.overview["message_url"] = source_url
             missing_candidates = extract_missing_people(content.decode("utf-8", errors="replace"))
+            repository_people = None
             if missing_candidates:
                 repository_people = kometa_image_urls().get("Kometa Repo Image")
                 if repository_people is not None:
                     add_missing_people_recommendations(result, missing_candidates, repository_people)
             scan_id, delete_token = store.create(filename, content, result)
             result_url = url_for("result_page", scan_id=scan_id, _external=True)
-            missing_people = save_missing_people(missing_candidates, filename=result.filename, log_url=result_url, source_url=source_url)
+            missing_people = save_missing_people(
+                _people_needing_repository_images(missing_candidates, repository_people),
+                filename=result.filename,
+                log_url=result_url,
+                source_url=source_url,
+            )
             payloads.append({"id": scan_id, "filename": result.filename, "recommendations": result.recommendations, "metadata": result.metadata, "overview": result.overview, "categories": result.categories, "result_url": result_url, "delete_token": delete_token, "expires_at": expires_at, "uploaded_by_bot": is_bot, "missing_people": missing_people})
-        if not is_bot:
-            notify_people_webhook([person for payload in payloads for person in payload["missing_people"]])
+        notify_people_webhook([person for payload in payloads for person in payload["missing_people"]])
         if len(payloads) > 1:
             batch_id, admin_token = store.create_batch(payloads, unscanned_files)
             response = {
