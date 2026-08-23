@@ -875,7 +875,9 @@ async function downloadLog() {
   link.click();
   URL.revokeObjectURL(link.href);
 }
-document.querySelector("#open-download").addEventListener("click", () => document.querySelector("#download-dialog").showModal());
+const downloadDialog = document.querySelector("#download-dialog");
+document.querySelector("#open-download").addEventListener("click", () => downloadDialog.showModal());
+document.querySelector("#open-download-main").addEventListener("click", () => downloadDialog.showModal());
 document.querySelector("#download-log-option").addEventListener("click", async () => {
   try { await downloadLog(); document.querySelector("#download-dialog").close(); } catch (error) { alert(error.message); }
 });
@@ -894,7 +896,7 @@ document.querySelector("#download-both-option").addEventListener("click", async 
     document.querySelector("#download-dialog").close();
   } catch (error) { alert(error.message); }
 });
-document.querySelector("#close-download").addEventListener("click", () => document.querySelector("#download-dialog").close());
+document.querySelector("#close-download").addEventListener("click", () => downloadDialog.close());
 document.querySelector("#close-recommendation").addEventListener("click", () => document.querySelector("#recommendation-dialog").close());
 document.querySelector("#delete-scan").addEventListener("click", async () => {
   if (!currentScanId || !deleteToken || !await ConfirmDialog.show({ title: "Delete this scan?", message: "This permanently deletes the log and its scan results.", confirmText: "Delete scan" })) return;
@@ -938,8 +940,8 @@ logViewer.addEventListener("click", (event) => {
 document.querySelector("#recommendation-dialog").addEventListener("click", (event) => {
   if (event.target === document.querySelector("#recommendation-dialog")) document.querySelector("#recommendation-dialog").close();
 });
-document.querySelector("#download-dialog").addEventListener("click", (event) => {
-  if (event.target === document.querySelector("#download-dialog")) document.querySelector("#download-dialog").close();
+downloadDialog.addEventListener("click", (event) => {
+  if (event.target === downloadDialog) downloadDialog.close();
 });
 helpDialog.addEventListener("click", (event) => {
   if (event.target === helpDialog) helpDialog.close();
