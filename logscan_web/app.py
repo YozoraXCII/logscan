@@ -327,10 +327,14 @@ def create_app() -> Flask:
                 for person in new_people
             )
             people_summary = f"**People Found:**\n{names}"
+        source_line = (
+            f"**Log Source:** [Click Here]({first['source_url']})\n"
+            if first.get("source_url") else "**Log Source:** Not available\n"
+        )
         message = (
             f"**Log Name:** `{first['log_name']}`\n"
             f"**Log URL:** [Click Here]({first['log_url']})\n"
-            "**Log Source:** Not available\n"
+            f"{source_line}"
             f"{people_summary}"
         )
         try:
