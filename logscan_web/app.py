@@ -187,7 +187,10 @@ def create_app() -> Flask:
             payload.append({
                 "tmdb_id": person["id"], "name": name,
                 "known_for_department": person.get("known_for_department"), "known_for": known_for,
-                "tmdb_image": {"preview_url": f"https://image.tmdb.org/t/p/w342{profile_path}", "download_url": f"https://image.tmdb.org/t/p/original{profile_path}"} if profile_path else None,
+                "tmdb_image": {
+                    "preview_url": f"https://image.tmdb.org/t/p/w342{profile_path}",
+                    "download_url": url_for("download_tmdb_image", image_path=profile_path, name=name),
+                } if profile_path else None,
                 "kometa_image": repo_image,
                 "kometa_variant_images": variant_images,
                 "flag_reason": flags.get(person["id"], {}).get("reason"),
@@ -484,6 +487,25 @@ def create_app() -> Flask:
             return jsonify(error="Provide a flag reason of up to 500 characters."), 400
         return "", 204
 
+    @app.get("/api/tmdb/image-download")
+    def download_tmdb_image():
+        """Proxy an original TMDb profile image with a useful download filename."""
+        image_path = request.args.get("image_path", "")
+        person_name = request.args.get("name", "person")
+        if not re.fullmatch(r"/[A-Za-z0-9_-]+\.jpe?g", image_path, re.IGNORECASE):
+            abort(404)
+        filename = re.sub(r'[<>:"/\\\\|?*\x00-\x1f]+', "_", person_name).strip(" .") or "person"
+        try:
+            with urlopen(
+                Request(f"https://image.tmdb.org/t/p/original{image_path}", headers={"Accept": "image/jpeg"}),
+                timeout=15,
+            ) as response:
+                image = response.read()
+        except (HTTPError, URLError, TimeoutError):
+            app.logger.warning("Unable to download TMDb image %s", image_path)
+            abort(502)
+        return send_file(BytesIO(image), mimetype="image/jpeg", as_attachment=True, download_name=f"{filename}.jpg")
+
     @app.get("/api/people/<person_key>/images")
     def person_images(person_key):
         person = people_store.get(person_key)
@@ -511,7 +533,7 @@ def create_app() -> Flask:
                 if path:
                     images.append({
                         "preview_url": f"https://image.tmdb.org/t/p/w342{path}",
-                        "download_url": f"https://image.tmdb.org/t/p/original{path}",
+                        "download_url": url_for("download_tmdb_image", image_path=path, name=person["name"]),
                         "width": image.get("width"),
                         "height": image.get("height"),
                     })
