@@ -33,7 +33,8 @@ KOMETA_IMAGE_SOURCES = (
     ("Signature", "https://raw.githubusercontent.com/Kometa-Team/People-Images-signature/master/README.md"),
 )
 KOMETA_IMAGE_CACHE_SECONDS = 60 * 60
-POPULAR_PEOPLE_CACHE_SECONDS = 60 * 60
+POPULAR_PEOPLE_CACHE_SECONDS = 24 * 60 * 60
+POPULAR_PEOPLE_LIMIT = 250
 POPULAR_PEOPLE_CHECK_SECONDS = 30 * 24 * 60 * 60
 
 
@@ -142,27 +143,91 @@ def create_app() -> Flask:
             kometa_images_cache.update(expires_at=time.monotonic() + KOMETA_IMAGE_CACHE_SECONDS, images=images)
             return images
 
+    def imdb_starmeter_people() -> list[dict]:
+        """Resolve IMDb's current StarMeter chart entries to TMDb people."""
+        query = """
+            {
+              chartNames(first: 100, chart: { chartType: MOST_POPULAR_NAMES }) {
+                edges { node { id } }
+              }
+            }
+        """
+        try:
+            with urlopen(Request(
+                "https://caching.graphql.imdb.com/",
+                data=json.dumps({"query": query}).encode("utf-8"),
+                headers={
+                    "Accept": "application/json",
+                    "Content-Type": "application/json",
+                    "Origin": "https://www.imdb.com",
+                    "User-Agent": "Mozilla/5.0 (compatible; Kometa-Logscan/1.0)",
+                    "x-imdb-client-name": "imdb-web-next-localized",
+                },
+            ), timeout=15) as response:
+                chart = json.loads(response.read().decode("utf-8"))
+        except (HTTPError, URLError, TimeoutError, ValueError):
+            app.logger.warning("Unable to fetch IMDb StarMeter from GraphQL.")
+            return []
+
+        people = []
+        seen_ids = set()
+        edges = chart.get("data", {}).get("chartNames", {}).get("edges", [])
+        for edge in edges:
+            imdb_id = edge.get("node", {}).get("id")
+            if not isinstance(imdb_id, str) or not re.fullmatch(r"nm\d{5,}", imdb_id):
+                continue
+            if imdb_id in seen_ids:
+                continue
+            seen_ids.add(imdb_id)
+            data = tmdb_get(f"/find/{imdb_id}", {"external_source": "imdb_id"})
+            match = next((person for person in (data or {}).get("person_results", []) if person.get("id")), None)
+            if match and not match.get("adult"):
+                people.append({**match, "imdb_id": imdb_id})
+        return people
+
+    def order_popular_people(people: list[dict], flags: dict[int, dict[str, str]]) -> list[dict]:
+        """Keep StarMeter order ahead of the TMDb fill-in, then surface flags."""
+        return sorted(
+            people,
+            key=lambda person: (
+                person.get("starmeter_rank", POPULAR_PEOPLE_LIMIT),
+                person["id"] not in flags,
+            ),
+        )
+
     def popular_people() -> list[dict]:
-        """Get a stable, de-duplicated snapshot of TMDb's top popular people."""
+        """Get a cached, de-duplicated 250-person IMDb-first popularity snapshot."""
         excluded_ids = popular_people_exclusions.list()
         checked_ids = popular_people_checks.active_ids(POPULAR_PEOPLE_CHECK_SECONDS)
         flags = popular_people_flags.list()
         with popular_people_lock:
             if popular_people_cache["expires_at"] > time.monotonic():
                 people = [person for person in popular_people_cache["people"] if person["id"] not in excluded_ids | checked_ids]
-                return sorted(people, key=lambda person: person["id"] not in flags)
+                return order_popular_people(people, flags)
             popular = []
             seen_ids = set()
-            for tmdb_page in range(1, (1000 // TMDB_POPULAR_PAGE_SIZE) + 1):
+            for starmeter_rank, person in enumerate(imdb_starmeter_people(), start=1):
+                person_id = person.get("id")
+                if person_id and person_id not in seen_ids:
+                    seen_ids.add(person_id)
+                    popular.append({**person, "starmeter_rank": starmeter_rank})
+                    if len(popular) >= POPULAR_PEOPLE_LIMIT:
+                        break
+            for tmdb_page in range(1, ((POPULAR_PEOPLE_LIMIT + TMDB_POPULAR_PAGE_SIZE - 1) // TMDB_POPULAR_PAGE_SIZE) + 1):
+                if len(popular) >= POPULAR_PEOPLE_LIMIT:
+                    break
                 data = tmdb_get("/person/popular", {"page": tmdb_page})
                 for person in (data or {}).get("results", []):
                     person_id = person.get("id")
-                    if not person_id or person_id in seen_ids or person_id in excluded_ids | checked_ids or person.get("adult"):
+                    if not person_id or person_id in seen_ids or person.get("adult"):
                         continue
                     seen_ids.add(person_id)
                     popular.append(person)
+                    if len(popular) >= POPULAR_PEOPLE_LIMIT:
+                        break
             popular_people_cache.update(expires_at=time.monotonic() + POPULAR_PEOPLE_CACHE_SECONDS, people=popular)
-            return sorted(popular, key=lambda person: person["id"] not in flags)
+            people = [person for person in popular if person["id"] not in excluded_ids | checked_ids]
+            return order_popular_people(people, flags)
 
     def popular_people_payload(people: list[dict], flags: dict[int, dict[str, str]]) -> list[dict]:
         """Build display data only for the currently requested page of people."""
@@ -186,6 +251,9 @@ def create_app() -> Flask:
             ] if repo_image else []
             payload.append({
                 "tmdb_id": person["id"], "name": name,
+                "tmdb_person_url": f"https://www.themoviedb.org/person/{person['id']}",
+                "imdb_person_url": f"https://www.imdb.com/name/{person['imdb_id']}/" if person.get("imdb_id") else None,
+                "tmdb_image_url": f"https://image.tmdb.org/t/p/original{profile_path}" if profile_path else None,
                 "known_for_department": person.get("known_for_department"), "known_for": known_for,
                 "tmdb_image": {
                     "preview_url": f"https://image.tmdb.org/t/p/w342{profile_path}",
@@ -468,13 +536,41 @@ def create_app() -> Flask:
         if not app.config["TMDB_API_KEY"]:
             return jsonify(error="TMDb API key is not configured."), 503
         page = request.args.get("page", default=1, type=int)
+        missing_image = request.args.get("missing_image") == "1"
         people = popular_people()
+        if missing_image:
+            primary_images = kometa_image_urls().get("Kometa Repo Image", {})
+            people = [person for person in people if person.get("name", "").casefold() not in primary_images]
         total_pages = max(1, (len(people) + POPULAR_PEOPLE_PAGE_SIZE - 1) // POPULAR_PEOPLE_PAGE_SIZE)
         if page is None or not 1 <= page <= total_pages:
             return jsonify(error=f"Page must be between 1 and {total_pages}."), 400
         first_index = (page - 1) * POPULAR_PEOPLE_PAGE_SIZE
         page_people = people[first_index:first_index + POPULAR_PEOPLE_PAGE_SIZE]
         return jsonify(people=popular_people_payload(page_people, popular_people_flags.list()), page=page, total_pages=total_pages)
+
+    @app.get("/api/people/popular/export")
+    def export_missing_popular_people():
+        """Download people absent from the primary Kometa image repository."""
+        if not app.config["TMDB_API_KEY"]:
+            return jsonify(error="TMDb API key is not configured."), 503
+        primary_images = kometa_image_urls().get("Kometa Repo Image", {})
+        missing_people = [
+            person for person in popular_people()
+            if person.get("name", "").casefold() not in primary_images
+        ]
+        export = [{
+            "name": person["name"],
+            "tmdb_id": person["tmdb_id"],
+            "tmdb_person_url": person["tmdb_person_url"],
+            "tmdb_image_url": person["tmdb_image_url"],
+            "imdb_person_url": person["imdb_person_url"],
+        } for person in popular_people_payload(missing_people, popular_people_flags.list())]
+        return send_file(
+            BytesIO(json.dumps(export, indent=2).encode("utf-8")),
+            mimetype="application/json",
+            as_attachment=True,
+            download_name="missing-trending-people.json",
+        )
 
     @app.post("/api/people/popular/<int:person_id>/exclude")
     def exclude_popular_person(person_id):

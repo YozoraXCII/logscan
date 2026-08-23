@@ -125,6 +125,13 @@ button { cursor: pointer; }
 .eyebrow { margin: 0 0 14px; color: var(--accent-bright); font-size: .76rem; font-weight: 700; letter-spacing: .14em; text-transform: uppercase; }
 h1 { margin: 0; max-width: 740px; font-size: clamp(2.5rem, 6vw, 4.35rem); line-height: 1.03; letter-spacing: -.055em; }
 .hero-copy { max-width: 680px; margin: 24px 0 0; color: var(--muted); font-size: 1.03rem; line-height: 1.75; }
+.popular-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 10px; margin: -22px 0 20px; }
+.popular-actions .secondary-button { text-decoration: none; }
+.popular-actions .icon-button { display: grid; width: 42px; min-height: 42px; padding: 0; place-items: center; }
+#missing-image-filter { border-color: rgba(251, 191, 36, .46); background: rgba(251, 191, 36, .13); color: #fde68a; }
+#missing-image-filter:hover { border-color: rgba(251, 191, 36, .76); background: rgba(251, 191, 36, .24); color: #fef3c7; }
+.popular-actions a.icon-button { border-color: rgba(34, 211, 238, .46); background: rgba(34, 211, 238, .13); color: #a5f3fc; }
+.popular-actions a.icon-button:hover { border-color: rgba(34, 211, 238, .76); background: rgba(34, 211, 238, .24); color: #cffafe; }
 
 .upload-card {
   border: 1px solid var(--border);

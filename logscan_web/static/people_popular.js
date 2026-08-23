@@ -1,7 +1,21 @@
 const gallery = document.querySelector("#people-gallery");
 const pagination = document.querySelector("#popular-pagination");
 const { googleImageSearchTile, imageCard, noImage } = window.PeopleImages;
-const page = Number(new URLSearchParams(location.search).get("page")) || 1;
+const query = new URLSearchParams(location.search);
+const page = Number(query.get("page")) || 1;
+const missingImage = query.get("missing_image") === "1";
+const filterButton = document.querySelector("#missing-image-filter");
+
+filterButton.title = missingImage ? "Show all people" : "Filter missing images";
+filterButton.setAttribute("aria-label", filterButton.title);
+filterButton.innerHTML = missingImage
+  ? '<i class="fa-solid fa-filter-circle-xmark" aria-hidden="true"></i>'
+  : '<i class="fa-solid fa-filter" aria-hidden="true"></i>';
+filterButton.addEventListener("click", () => {
+  const next = new URLSearchParams();
+  if (!missingImage) next.set("missing_image", "1");
+  location.href = `/people/popular?${next}`;
+});
 
 function addImage(images, image, label, missingMessage, name) {
   images.append(image ? imageCard({ ...image, label, alt: `${name} ${label}` }) : noImage(missingMessage));
@@ -106,7 +120,11 @@ function addPerson(person) {
 function pageLink(number, label, disabled = false) {
   const link = document.createElement(disabled ? "span" : "a");
   link.textContent = label;
-  if (!disabled) link.href = `/people/popular?page=${number}`;
+  if (!disabled) {
+    const params = new URLSearchParams({ page: number });
+    if (missingImage) params.set("missing_image", "1");
+    link.href = `/people/popular?${params}`;
+  }
   link.className = disabled ? "pagination-disabled" : "secondary-button";
   return link;
 }
@@ -124,12 +142,18 @@ function pageJumper(currentPage, totalPages) {
     option.selected = number === currentPage;
     select.append(option);
   }
-  select.addEventListener("change", () => { location.href = `/people/popular?page=${select.value}`; });
+  select.addEventListener("change", () => {
+    const params = new URLSearchParams({ page: select.value });
+    if (missingImage) params.set("missing_image", "1");
+    location.href = `/people/popular?${params}`;
+  });
   status.append(select, ` of ${totalPages}`);
   return status;
 }
 
-fetch(`/api/people/popular?page=${page}`).then(async (response) => {
+const apiParams = new URLSearchParams({ page });
+if (missingImage) apiParams.set("missing_image", "1");
+fetch(`/api/people/popular?${apiParams}`).then(async (response) => {
   const data = await response.json();
   if (!response.ok) throw new Error(data.error || "Unable to load popular people.");
   return data;
