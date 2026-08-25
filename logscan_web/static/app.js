@@ -376,6 +376,7 @@ function updateViewerMode(mode) {
   const toggle = document.querySelector("#toggle-viewer-content");
   toggle.setAttribute("aria-label", isConfig ? "View log" : "View config");
   toggle.title = isConfig ? "View log" : "View config";
+  toggle.querySelector("i").className = isConfig ? "fa-solid fa-file-lines" : "fa-solid fa-file-code";
   document.querySelector(".viewer-toolbar").hidden = isConfig;
 }
 

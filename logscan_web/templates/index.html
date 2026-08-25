@@ -100,8 +100,8 @@
         </div>
         <div class="viewer-actions">
           <button class="secondary-button icon-action" id="open-download" type="button" aria-label="Download files" title="Download files"><i class="fa-solid fa-download" aria-hidden="true"></i></button>
-          <button class="secondary-button icon-action" id="toggle-viewer-content" type="button" aria-label="View config" title="View config"><i class="fa-solid fa-eye" aria-hidden="true"></i></button>
-          <button class="icon-button" id="close-viewer" type="button" aria-label="Close log viewer">×</button>
+          <button class="secondary-button icon-action" id="toggle-viewer-content" type="button" aria-label="View config" title="View config"><i class="fa-solid fa-file-code" aria-hidden="true"></i></button>
+          <button class="danger-button icon-action" id="close-viewer" type="button" aria-label="Close log viewer" title="Close log viewer"><i class="fa-solid fa-xmark" aria-hidden="true"></i></button>
         </div>
       </header>
       <div class="viewer-toolbar">
@@ -136,11 +136,11 @@
   </dialog>
   <dialog class="help-dialog" id="download-dialog">
     <div class="help-dialog-shell">
-      <header class="viewer-header"><div><p class="eyebrow">Download</p><h2>Choose files to download</h2></div><button class="icon-button" id="close-download" type="button" aria-label="Close download options">×</button></header>
+      <header class="viewer-header"><div><p class="eyebrow">Download</p><h2>Choose files to download</h2></div><button class="danger-button icon-action" id="close-download" type="button" aria-label="Close download options" title="Close download options"><i class="fa-solid fa-xmark" aria-hidden="true"></i></button></header>
       <div class="download-dialog-actions">
-        <button class="secondary-button" id="download-log-option" type="button"><i class="fa-solid fa-file-lines" aria-hidden="true"></i> Download Log</button>
-        <button class="secondary-button" id="download-config-option" type="button"><i class="fa-solid fa-file-code" aria-hidden="true"></i> Download Config</button>
-        <button class="primary-button" id="download-both-option" type="button"><i class="fa-solid fa-box-archive" aria-hidden="true"></i> Download Both</button>
+        <button class="secondary-button" id="download-log-option" type="button"><i class="fa-solid fa-file-lines" aria-hidden="true"></i> Log</button>
+        <button class="secondary-button" id="download-config-option" type="button"><i class="fa-solid fa-file-code" aria-hidden="true"></i> Config</button>
+        <button class="primary-button" id="download-both-option" type="button"><i class="fa-solid fa-box-archive" aria-hidden="true"></i> Both</button>
       </div>
     </div>
   </dialog>

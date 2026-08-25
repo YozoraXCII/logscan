@@ -192,6 +192,12 @@ h1 { margin: 0; max-width: 740px; font-size: clamp(2.5rem, 6vw, 4.35rem); line-h
 h2 { margin: 0; font-size: clamp(1.5rem, 3.5vw, 2.5rem); letter-spacing: -.04em; }
 .secondary-button { padding: 11px 15px; border: 1px solid var(--border); background: var(--surface-strong); color: #dce1f5; }
 .icon-action { width: 42px; height: 42px; padding: 0; display: inline-grid; place-items: center; }
+#view-log { border-color: rgba(96, 165, 250, .46); background: rgba(96, 165, 250, .13); color: #bfdbfe; }
+#view-log:hover { border-color: rgba(96, 165, 250, .8); background: rgba(96, 165, 250, .23); color: #dbeafe; }
+#open-download-main, #open-download { border-color: rgba(251, 191, 36, .46); background: rgba(251, 191, 36, .13); color: #fde68a; }
+#open-download-main:hover, #open-download:hover { border-color: rgba(251, 191, 36, .8); background: rgba(251, 191, 36, .23); color: #fef3c7; }
+#toggle-viewer-content { border-color: rgba(167, 139, 250, .46); background: rgba(167, 139, 250, .13); color: #ddd6fe; }
+#toggle-viewer-content:hover { border-color: rgba(167, 139, 250, .8); background: rgba(167, 139, 250, .23); color: #ede9fe; }
 #get-help { border-color: rgba(74, 222, 128, .38); background: rgba(74, 222, 128, .14); color: #bbf7d0; }
 #get-help:hover { border-color: rgba(74, 222, 128, .72); background: rgba(74, 222, 128, .24); color: #dcfce7; }
 .secondary-button:hover { border-color: rgba(160,174,221,.35); }
@@ -269,6 +275,7 @@ details[open] .chevron { transform: rotate(90deg); }
 }
 .log-viewer::backdrop { background: rgba(3,5,13,.82); backdrop-filter: blur(8px); }
 .help-dialog { width: min(680px, calc(100% - 32px)); padding: 0; border: 1px solid rgba(160,174,221,.22); border-radius: 16px; background: #0b0e1c; color: var(--text); box-shadow: 0 30px 100px rgba(0,0,0,.62); }
+#download-dialog { width: min(500px, calc(100% - 32px)); }
 .help-dialog::backdrop { background: rgba(3,5,13,.82); backdrop-filter: blur(8px); }
 .help-dialog-shell { overflow: hidden; }
 .help-dialog-content { display: grid; gap: 16px; padding: 24px; }
