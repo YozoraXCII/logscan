@@ -78,6 +78,23 @@ docker run --rm -p 8000:8000 \
 
 Open <http://127.0.0.1:8000>.
 
+## Updating a Docker deployment
+
+From the directory containing the repository and Compose file, pull the
+latest application version and recreate the container with a newly built
+image:
+
+```bash
+cd /opt/logscan
+git pull
+docker compose up -d --build --remove-orphans
+docker compose logs -f
+```
+
+The persistent `/opt/logscan/data` directory is not recreated or removed by
+this process. Press `Ctrl+C` to stop following logs; it does not stop the
+container.
+
 ## Saltbox deployment
 
 The included `compose.saltbox.yml` follows Saltbox's Traefik template and
@@ -219,4 +236,3 @@ python -m unittest discover -s tests -v
 - `requirements.txt` — complete Python dependencies
 - `Dockerfile` — container deployment
 - `compose.saltbox.yml` — Saltbox/Traefik deployment
-- `logscan/` — Red bot cog
