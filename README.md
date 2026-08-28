@@ -106,20 +106,59 @@ startup and hourly thereafter.
 
 ## Red bot cog
 
-Add this repository to Red's Downloader and install `logscan_cog`:
+Add this repository to Red's Downloader and install `logscan`:
 
 ```text
 [p]repo add logscan <repository-clone-url>
-[p]cog install logscan logscan_cog
-[p]load logscan_cog
+[p]cog install logscan logscan
+[p]load logscan
 [p]logscanset url https://logscan.kometa.team
 [p]logscanset apikey <the same value from /opt/logscan/.env>
+[p]logscanset channels production <channel-id>
 ```
 
 The settings commands are bot-owner only. The API-key command attempts to
 delete the invoking Discord message. Prefer running it in a private channel.
 The cog requires permission to read messages, send messages, attach buttons,
 and read attachment content.
+
+### Cog channel and role configuration
+
+Log scanning is restricted to the active environment's configured channels.
+The cog starts in `production`, with its existing scan channel configured as
+the default. Configure the production channels explicitly after installation;
+supplying multiple IDs permits scanning in all of them:
+
+```text
+[p]logscanset channels production <channel-id> [additional-channel-ids]
+```
+
+For a separate testing setup, configure its channels and switch the cog to the
+`test` environment:
+
+```text
+[p]logscanset channels test <channel-id> [additional-channel-ids]
+[p]logscanset environment test
+```
+
+Switch back with `[p]logscanset environment production`. The configured lists
+are independent: changing the active environment changes which list controls
+automatic attachment detection and the `[p]logscan <message-link>` command.
+Threads are always allowed, so a user can scan a log in a thread even when the
+thread's parent channel is not listed. A log posted in a non-thread channel
+outside the active list receives a short-lived message explaining where scans
+are permitted.
+
+The uploader is always allowed to press the scan button. To let support staff
+act on a user's prompt, configure role IDs:
+
+```text
+[p]logscanset roles <role-id> [additional-role-ids]
+```
+
+Those roles can approve or cancel another user's pending scan; they do not
+bypass the allowed-channel rules. Run `[p]logscanset roles` with no IDs to
+clear the privileged-role list.
 
 The returned link contains the deletion token after `#delete=`. URL fragments
 are not included in HTTP requests, but anyone who receives the complete link
@@ -180,4 +219,4 @@ python -m unittest discover -s tests -v
 - `requirements.txt` — complete Python dependencies
 - `Dockerfile` — container deployment
 - `compose.saltbox.yml` — Saltbox/Traefik deployment
-- `logscan_cog/` — Red bot cog
+- `logscan/` — Red bot cog
