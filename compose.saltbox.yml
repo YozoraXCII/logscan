@@ -23,6 +23,7 @@ services:
       traefik.http.routers.logscan.middlewares: globalHeaders@file,secureHeaders@file,robotHeaders@file,cloudflarewarp@docker
       traefik.http.routers.logscan.rule: Host(`logscan.kometa.wiki`)
       traefik.http.routers.logscan.service: logscan
+      traefik.http.routers.logscan.tls: "true"
       traefik.http.routers.logscan.tls.certresolver: cfdns
       traefik.http.routers.logscan.tls.options: securetls@file
       traefik.http.services.logscan.loadbalancer.server.port: "8000"
