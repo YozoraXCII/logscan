@@ -81,6 +81,11 @@ def _people_needing_repository_images(candidates: list[dict], repository_people:
     return [candidate for candidate in candidates if candidate["name"].casefold() not in repository_people]
 
 
+def _has_current_tmdb_image(person: dict) -> bool:
+    """Return whether TMDb currently provides a profile image for a person."""
+    return bool(person.get("profile_path"))
+
+
 def load_local_env() -> None:
     """Load a local development .env without overriding real process settings."""
     env_file = os.path.join(os.getcwd(), ".env")
@@ -189,7 +194,7 @@ def create_app() -> Flask:
             seen_ids.add(imdb_id)
             data = tmdb_get(f"/find/{imdb_id}", {"external_source": "imdb_id"})
             match = next((person for person in (data or {}).get("person_results", []) if person.get("id")), None)
-            if match and not match.get("adult"):
+            if match and not match.get("adult") and _has_current_tmdb_image(match):
                 people.append({**match, "imdb_id": imdb_id})
         return people
 
@@ -227,7 +232,7 @@ def create_app() -> Flask:
                 data = tmdb_get("/person/popular", {"page": tmdb_page})
                 for person in (data or {}).get("results", []):
                     person_id = person.get("id")
-                    if not person_id or person_id in seen_ids or person.get("adult"):
+                    if not person_id or person_id in seen_ids or person.get("adult") or not _has_current_tmdb_image(person):
                         continue
                     seen_ids.add(person_id)
                     popular.append(person)
@@ -555,6 +560,7 @@ def create_app() -> Flask:
         page = request.args.get("page", default=1, type=int)
         missing_image = request.args.get("missing_image") == "1"
         people = popular_people()
+        people = [person for person in people if _has_current_tmdb_image(person)]
         if missing_image:
             primary_images = kometa_image_urls().get("Kometa Repo Image", {})
             people = [person for person in people if person.get("name", "").casefold() not in primary_images]
@@ -573,7 +579,7 @@ def create_app() -> Flask:
         primary_images = kometa_image_urls().get("Kometa Repo Image", {})
         missing_people = [
             person for person in popular_people()
-            if person.get("name", "").casefold() not in primary_images
+            if _has_current_tmdb_image(person) and person.get("name", "").casefold() not in primary_images
         ]
         export = "\n".join(
             f"{person['tmdb_id']}|{person['name']}"
