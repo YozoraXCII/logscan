@@ -218,6 +218,7 @@ h2 { margin: 0; font-size: clamp(1.5rem, 3.5vw, 2.5rem); letter-spacing: -.04em;
 
 .result-layout { display: grid; grid-template-columns: 220px minmax(0, 1fr); gap: 24px; margin-top: 30px; align-items: start; }
 .section-nav { position: sticky; top: 24px; display: flex; flex-direction: column; gap: 6px; padding: 8px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); }
+.section-select { display: none; }
 .nav-button { padding: 11px 12px; border: 0; border-radius: 8px; display: flex; align-items: center; justify-content: space-between; gap: 12px; color: var(--muted); background: transparent; text-align: left; font-size: .84rem; }
 .nav-button:hover, .nav-button.active { color: white; background: rgba(120, 125, 243, .12); }
 .nav-count { min-width: 22px; padding: 3px 6px; border-radius: 5px; background: rgba(255,255,255,.06); font-size: .69rem; text-align: center; }
@@ -339,8 +340,9 @@ footer { width: min(1040px, calc(100% - 40px)); margin: 100px auto 0; padding: 2
   .summary-grid { grid-template-columns: 1fr 1fr; }
   .summary-card:first-child { grid-column: 1 / -1; }
   .result-layout { grid-template-columns: 1fr; }
-  .section-nav { position: static; flex-direction: row; overflow-x: auto; }
-  .nav-button { flex: 0 0 auto; }
+  .section-nav { position: static; display: block; padding: 0; border: 0; background: transparent; }
+  .section-select { display: block; width: 100%; padding: 13px 14px; border: 1px solid var(--border); border-radius: 12px; color: white; background: var(--surface); font: inherit; }
+  .nav-button { display: none; }
   .image-row, .image-gallery { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 @media (max-width: 960px) and (min-width: 761px) {

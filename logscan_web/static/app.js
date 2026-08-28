@@ -98,6 +98,8 @@ function showOverview(group, overview) {
   document.querySelectorAll(".nav-button").forEach((button) => {
     button.classList.toggle("active", button.dataset.group === group.key);
   });
+  const sectionSelect = document.querySelector("#section-select");
+  if (sectionSelect) sectionSelect.value = group.key;
   sectionContent.replaceChildren();
   const header = document.createElement("div");
   header.className = "section-header";
@@ -576,6 +578,8 @@ function showGroup(group, recommendations) {
   document.querySelectorAll(".nav-button").forEach((button) => {
     button.classList.toggle("active", button.dataset.group === group.key);
   });
+  const sectionSelect = document.querySelector("#section-select");
+  if (sectionSelect) sectionSelect.value = group.key;
   sectionContent.replaceChildren();
   const header = document.createElement("div");
   header.className = "section-header";
@@ -699,9 +703,17 @@ function renderResults(data) {
   );
 
   sectionNav.replaceChildren();
+  const sectionSelect = document.createElement("select");
+  sectionSelect.id = "section-select";
+  sectionSelect.className = "section-select";
+  sectionSelect.setAttribute("aria-label", "View a log section");
   groups.forEach((group) => {
     const recommendationCount = recommendations.filter((item) => item.severity === group.key).length;
     if (group.key !== "overview" && recommendationCount === 0) return;
+    const option = document.createElement("option");
+    option.value = group.key;
+    option.textContent = group.key === "overview" ? group.label : `${group.label} (${recommendationCount})`;
+    sectionSelect.append(option);
     const button = document.createElement("button");
     button.type = "button";
     button.className = "nav-button";
@@ -720,6 +732,11 @@ function renderResults(data) {
       : showGroup(group, recommendations));
     sectionNav.append(button);
   });
+  sectionSelect.addEventListener("change", () => {
+    const group = groups.find((item) => item.key === sectionSelect.value);
+    if (group) group.key === "overview" ? showOverview(group, overview) : showGroup(group, recommendations);
+  });
+  sectionNav.prepend(sectionSelect);
   showOverview(groups[0], overview);
   results.hidden = false;
   currentScanId = data.id || currentScanId;
