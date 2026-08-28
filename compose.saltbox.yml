@@ -25,6 +25,7 @@ services:
       traefik.http.routers.logscan.service: logscan
       traefik.http.routers.logscan.tls: "true"
       traefik.http.routers.logscan.tls.certresolver: cfdns
+      traefik.http.routers.logscan.tls.domains[0].main: "logscan.kometa.wiki"
       traefik.http.routers.logscan.tls.options: securetls@file
       traefik.http.services.logscan.loadbalancer.server.port: "8000"
     volumes:
