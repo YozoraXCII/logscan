@@ -17,15 +17,13 @@ services:
       traefik.enable: "true"
       traefik.http.routers.logscan-http.entrypoints: web
       traefik.http.routers.logscan-http.middlewares: globalHeaders@file,redirect-to-https@docker,robotHeaders@file,cloudflarewarp@docker
-      traefik.http.routers.logscan-http.rule: Host(`logscan.kometa.wiki`)
+      traefik.http.routers.logscan-http.rule: Host(`logscan.kometa.team`)
       traefik.http.routers.logscan-http.service: logscan
       traefik.http.routers.logscan.entrypoints: websecure
       traefik.http.routers.logscan.middlewares: globalHeaders@file,secureHeaders@file,robotHeaders@file,cloudflarewarp@docker
-      traefik.http.routers.logscan.rule: Host(`logscan.kometa.wiki`)
+      traefik.http.routers.logscan.rule: Host(`logscan.kometa.team`)
       traefik.http.routers.logscan.service: logscan
-      traefik.http.routers.logscan.tls: "true"
       traefik.http.routers.logscan.tls.certresolver: cfdns
-      traefik.http.routers.logscan.tls.domains[0].main: "logscan.kometa.wiki"
       traefik.http.routers.logscan.tls.options: securetls@file
       traefik.http.services.logscan.loadbalancer.server.port: "8000"
     volumes:
