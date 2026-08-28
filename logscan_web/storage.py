@@ -180,6 +180,67 @@ class PeopleStore:
         temporary.replace(self.path)
 
 
+class PopularPeopleCacheStore:
+    """Durable, atomically-written snapshot shared by all web workers."""
+
+    def __init__(self, root: str | os.PathLike[str]):
+        self.path = Path(root) / "popular_people_cache.json"
+        self.lock = threading.Lock()
+
+    def load(self) -> dict | None:
+        with self.lock:
+            try:
+                snapshot = json.loads(self.path.read_text(encoding="utf-8"))
+            except (FileNotFoundError, json.JSONDecodeError):
+                return None
+            if not isinstance(snapshot, dict) or not isinstance(snapshot.get("people"), list) or not isinstance(snapshot.get("updated_at"), str):
+                return None
+            return snapshot
+
+    def save(self, people: list[dict]) -> dict:
+        snapshot = {"updated_at": datetime.now(UTC).isoformat(), "people": people}
+        with self.lock:
+            temporary = self.path.with_suffix(".tmp")
+            temporary.write_text(json.dumps(snapshot, ensure_ascii=False), encoding="utf-8")
+            temporary.replace(self.path)
+        return snapshot
+
+
+class TMDbFindCacheStore:
+    """Durable IMDb-to-TMDb lookup cache used while building popular people."""
+
+    def __init__(self, root: str | os.PathLike[str]):
+        self.path = Path(root) / "tmdb_find_cache.json"
+        self.lock = threading.Lock()
+
+    def get(self, imdb_id: str, max_age_seconds: int) -> dict | None:
+        with self.lock:
+            records = self._read()
+            record = records.get(imdb_id)
+            if not isinstance(record, dict):
+                return None
+            try:
+                fresh = datetime.fromisoformat(record["updated_at"]).timestamp() >= datetime.now(UTC).timestamp() - max_age_seconds
+            except (KeyError, TypeError, ValueError):
+                return None
+            return record.get("person") if fresh and isinstance(record.get("person"), dict) else None
+
+    def save(self, imdb_id: str, person: dict | None) -> None:
+        with self.lock:
+            records = self._read()
+            records[imdb_id] = {"updated_at": datetime.now(UTC).isoformat(), "person": person}
+            temporary = self.path.with_suffix(".tmp")
+            temporary.write_text(json.dumps(records, ensure_ascii=False), encoding="utf-8")
+            temporary.replace(self.path)
+
+    def _read(self) -> dict:
+        try:
+            records = json.loads(self.path.read_text(encoding="utf-8"))
+        except (FileNotFoundError, json.JSONDecodeError):
+            return {}
+        return records if isinstance(records, dict) else {}
+
+
 class PopularPeopleExclusionStore:
     """Durable TMDb person-ID exclusions for the Popular People page."""
 

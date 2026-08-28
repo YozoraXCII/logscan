@@ -6,6 +6,7 @@ import re
 import threading
 import time
 import zipfile
+from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime, timedelta
 from io import BytesIO
 from pathlib import Path
@@ -19,7 +20,7 @@ from werkzeug.middleware.proxy_fix import ProxyFix
 from .models import Finding
 from .recommendations import validate_redacted_config
 from .scanner import ALLOWED_SUFFIXES, ARCHIVE_SUFFIXES, MAX_FILE_BYTES, ScanError, extract_missing_people, find_scannable_archive_logs, prepare_scan_input, scan_archive_logs, scan_log
-from .storage import PeopleStore, PopularPeopleCheckStore, PopularPeopleExclusionStore, PopularPeopleFlagStore, ScanStore
+from .storage import PeopleStore, PopularPeopleCacheStore, PopularPeopleCheckStore, PopularPeopleExclusionStore, PopularPeopleFlagStore, ScanStore, TMDbFindCacheStore
 
 RETENTION_SECONDS = 48 * 60 * 60
 CLEANUP_INTERVAL_SECONDS = 60 * 60
@@ -36,6 +37,8 @@ KOMETA_IMAGE_CACHE_SECONDS = 60 * 60
 POPULAR_PEOPLE_CACHE_SECONDS = 24 * 60 * 60
 POPULAR_PEOPLE_LIMIT = 250
 POPULAR_PEOPLE_CHECK_SECONDS = 30 * 24 * 60 * 60
+TMDB_FIND_CACHE_SECONDS = 7 * 24 * 60 * 60
+TMDB_FIND_MAX_WORKERS = 8
 
 
 def add_missing_people_recommendations(result, candidates: list[dict], repository_people: dict[str, str]) -> None:
@@ -117,10 +120,15 @@ def create_app() -> Flask:
     popular_people_exclusions = PopularPeopleExclusionStore(app.config["SCAN_STORE"])
     popular_people_checks = PopularPeopleCheckStore(app.config["SCAN_STORE"])
     popular_people_flags = PopularPeopleFlagStore(app.config["SCAN_STORE"])
+    popular_people_store = PopularPeopleCacheStore(app.config["SCAN_STORE"])
+    tmdb_find_cache = TMDbFindCacheStore(app.config["SCAN_STORE"])
     kometa_images_cache = {"expires_at": 0.0, "images": {}}
     kometa_images_lock = threading.Lock()
-    popular_people_cache = {"expires_at": 0.0, "people": []}
+    popular_people_cache = {"expires_at": 0.0, "snapshot_id": "", "people": []}
     popular_people_lock = threading.Lock()
+    popular_people_refreshing = False
+    popular_people_payload_cache: dict[tuple, list[dict]] = {}
+    popular_people_payload_lock = threading.Lock()
 
     def tmdb_get(path: str, params: dict | None = None) -> dict | None:
         api_key = app.config["TMDB_API_KEY"]
@@ -182,7 +190,7 @@ def create_app() -> Flask:
             app.logger.warning("Unable to fetch IMDb StarMeter from GraphQL.")
             return []
 
-        people = []
+        imdb_ids = []
         seen_ids = set()
         edges = chart.get("data", {}).get("chartNames", {}).get("edges", [])
         for edge in edges:
@@ -192,8 +200,22 @@ def create_app() -> Flask:
             if imdb_id in seen_ids:
                 continue
             seen_ids.add(imdb_id)
+            imdb_ids.append(imdb_id)
+
+        def resolve(imdb_id: str) -> tuple[str, dict | None]:
+            cached = tmdb_find_cache.get(imdb_id, TMDB_FIND_CACHE_SECONDS)
+            if cached is not None:
+                return imdb_id, cached
             data = tmdb_get(f"/find/{imdb_id}", {"external_source": "imdb_id"})
             match = next((person for person in (data or {}).get("person_results", []) if person.get("id")), None)
+            tmdb_find_cache.save(imdb_id, match)
+            return imdb_id, match
+
+        with ThreadPoolExecutor(max_workers=TMDB_FIND_MAX_WORKERS, thread_name_prefix="tmdb-find") as executor:
+            resolved = dict(executor.map(resolve, imdb_ids))
+        people = []
+        for imdb_id in imdb_ids:
+            match = resolved.get(imdb_id)
             if match and not match.get("adult") and _has_current_tmdb_image(match):
                 people.append({**match, "imdb_id": imdb_id})
         return people
@@ -208,39 +230,108 @@ def create_app() -> Flask:
             ),
         )
 
-    def popular_people() -> list[dict]:
-        """Get a cached, de-duplicated 250-person IMDb-first popularity snapshot."""
+    def _filtered_popular_people(people: list[dict]) -> list[dict]:
         excluded_ids = popular_people_exclusions.list()
         checked_ids = popular_people_checks.active_ids(POPULAR_PEOPLE_CHECK_SECONDS)
         flags = popular_people_flags.list()
+        people = [person for person in people if person.get("id") not in excluded_ids | checked_ids]
+        return order_popular_people(people, flags)
+
+    def _install_popular_people_snapshot(snapshot: dict) -> None:
+        try:
+            updated_at = datetime.fromisoformat(snapshot["updated_at"]).timestamp()
+        except (KeyError, TypeError, ValueError):
+            return
         with popular_people_lock:
-            if popular_people_cache["expires_at"] > time.monotonic():
-                people = [person for person in popular_people_cache["people"] if person["id"] not in excluded_ids | checked_ids]
-                return order_popular_people(people, flags)
-            popular = []
-            seen_ids = set()
-            for starmeter_rank, person in enumerate(imdb_starmeter_people(), start=1):
+            popular_people_cache.update(
+                expires_at=time.monotonic() + max(0, POPULAR_PEOPLE_CACHE_SECONDS - (datetime.now(UTC).timestamp() - updated_at)),
+                snapshot_id=snapshot["updated_at"],
+                people=snapshot["people"],
+            )
+
+    def _build_popular_people() -> list[dict]:
+        """Build a complete, de-duplicated image-bearing IMDb-first snapshot."""
+        popular = []
+        seen_ids = set()
+        for starmeter_rank, person in enumerate(imdb_starmeter_people(), start=1):
+            person_id = person.get("id")
+            if person_id and person_id not in seen_ids:
+                seen_ids.add(person_id)
+                popular.append({**person, "starmeter_rank": starmeter_rank})
+                if len(popular) >= POPULAR_PEOPLE_LIMIT:
+                    return popular
+        tmdb_page = 1
+        while len(popular) < POPULAR_PEOPLE_LIMIT:
+            data = tmdb_get("/person/popular", {"page": tmdb_page})
+            results = (data or {}).get("results", [])
+            if not results:
+                break
+            for person in results:
                 person_id = person.get("id")
-                if person_id and person_id not in seen_ids:
-                    seen_ids.add(person_id)
-                    popular.append({**person, "starmeter_rank": starmeter_rank})
-                    if len(popular) >= POPULAR_PEOPLE_LIMIT:
-                        break
-            for tmdb_page in range(1, ((POPULAR_PEOPLE_LIMIT + TMDB_POPULAR_PAGE_SIZE - 1) // TMDB_POPULAR_PAGE_SIZE) + 1):
+                if not person_id or person_id in seen_ids or person.get("adult") or not _has_current_tmdb_image(person):
+                    continue
+                seen_ids.add(person_id)
+                popular.append(person)
                 if len(popular) >= POPULAR_PEOPLE_LIMIT:
                     break
-                data = tmdb_get("/person/popular", {"page": tmdb_page})
-                for person in (data or {}).get("results", []):
-                    person_id = person.get("id")
-                    if not person_id or person_id in seen_ids or person.get("adult") or not _has_current_tmdb_image(person):
-                        continue
-                    seen_ids.add(person_id)
-                    popular.append(person)
-                    if len(popular) >= POPULAR_PEOPLE_LIMIT:
-                        break
-            popular_people_cache.update(expires_at=time.monotonic() + POPULAR_PEOPLE_CACHE_SECONDS, people=popular)
-            people = [person for person in popular if person["id"] not in excluded_ids | checked_ids]
-            return order_popular_people(people, flags)
+            tmdb_page += 1
+            if tmdb_page > (data or {}).get("total_pages", 0):
+                break
+        return popular
+
+    def _refresh_popular_people() -> None:
+        nonlocal popular_people_refreshing
+        try:
+            people = _build_popular_people()
+            if people:
+                snapshot = popular_people_store.save(people)
+                _install_popular_people_snapshot(snapshot)
+                with popular_people_payload_lock:
+                    popular_people_payload_cache.clear()
+        except Exception:
+            app.logger.exception("Unable to refresh the Trending People snapshot.")
+        finally:
+            with popular_people_lock:
+                popular_people_refreshing = False
+
+    def _refresh_popular_people_in_background() -> None:
+        nonlocal popular_people_refreshing
+        with popular_people_lock:
+            if popular_people_refreshing:
+                return
+            popular_people_refreshing = True
+        threading.Thread(target=_refresh_popular_people, name="popular-people-refresh", daemon=True).start()
+
+    def popular_people() -> list[dict]:
+        """Return a fast cached snapshot and refresh stale data without blocking visitors."""
+        nonlocal popular_people_refreshing
+        with popular_people_lock:
+            cached_people = list(popular_people_cache["people"])
+            fresh = popular_people_cache["expires_at"] > time.monotonic()
+        if not cached_people:
+            snapshot = popular_people_store.load()
+            if snapshot:
+                _install_popular_people_snapshot(snapshot)
+                with popular_people_lock:
+                    cached_people = list(popular_people_cache["people"])
+                    fresh = popular_people_cache["expires_at"] > time.monotonic()
+        if cached_people:
+            if not fresh:
+                _refresh_popular_people_in_background()
+            return _filtered_popular_people(cached_people)
+
+        with popular_people_lock:
+            if popular_people_refreshing:
+                return []
+            popular_people_refreshing = True
+        _refresh_popular_people()
+        with popular_people_lock:
+            refreshed_people = list(popular_people_cache["people"])
+        return _filtered_popular_people(refreshed_people)
+
+    def clear_popular_people_payload_cache() -> None:
+        with popular_people_payload_lock:
+            popular_people_payload_cache.clear()
 
     def popular_people_payload(people: list[dict], flags: dict[int, dict[str, str]]) -> list[dict]:
         """Build display data only for the currently requested page of people."""
@@ -569,7 +660,23 @@ def create_app() -> Flask:
             return jsonify(error=f"Page must be between 1 and {total_pages}."), 400
         first_index = (page - 1) * POPULAR_PEOPLE_PAGE_SIZE
         page_people = people[first_index:first_index + POPULAR_PEOPLE_PAGE_SIZE]
-        return jsonify(people=popular_people_payload(page_people, popular_people_flags.list()), page=page, total_pages=total_pages)
+        flags = popular_people_flags.list()
+        with popular_people_lock:
+            snapshot_id = popular_people_cache["snapshot_id"]
+        cache_key = (
+            snapshot_id, page, missing_image, tuple(person["id"] for person in page_people),
+            tuple(sorted((person_id, flag.get("reason", "")) for person_id, flag in flags.items())),
+        )
+        with popular_people_payload_lock:
+            payload = popular_people_payload_cache.get(cache_key)
+        if payload is None:
+            payload = popular_people_payload(page_people, flags)
+            with popular_people_payload_lock:
+                popular_people_payload_cache[cache_key] = payload
+        response = jsonify(people=payload, page=page, total_pages=total_pages)
+        response.set_etag(hashlib.sha256(repr(cache_key).encode("utf-8")).hexdigest())
+        response.headers["Cache-Control"] = "private, max-age=60, stale-while-revalidate=300"
+        return response.make_conditional(request)
 
     @app.get("/api/people/popular/export")
     def export_missing_popular_people():
@@ -595,6 +702,7 @@ def create_app() -> Flask:
     @app.post("/api/people/popular/<int:person_id>/exclude")
     def exclude_popular_person(person_id):
         if popular_people_exclusions.add(person_id):
+            clear_popular_people_payload_cache()
             return "", 201
         return "", 204
 
@@ -603,6 +711,7 @@ def create_app() -> Flask:
         if not popular_people_checks.mark(person_id):
             abort(400)
         popular_people_flags.delete(person_id)
+        clear_popular_people_payload_cache()
         return "", 204
 
     @app.post("/api/people/popular/<int:person_id>/flag")
@@ -611,6 +720,7 @@ def create_app() -> Flask:
         reason = payload.get("reason", "")
         if not isinstance(reason, str) or len(reason.strip()) > 500 or not popular_people_flags.upsert(person_id, reason):
             return jsonify(error="Provide a flag reason of up to 500 characters."), 400
+        clear_popular_people_payload_cache()
         return "", 204
 
     @app.get("/api/tmdb/image-download")
