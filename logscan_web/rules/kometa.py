@@ -89,7 +89,12 @@ class RatingRoundingRule:
         return self.definition.id
 
     def evaluate(self, context: ScanContext) -> list[Finding]:
-        if not any(PlexSecurityRule.version_pattern.search(line) for line in context.lines):
+        if not any(
+            (match := PlexSecurityRule.version_pattern.search(line))
+            and PlexSecurityRule.vulnerable_low <= PlexSecurityRule._version_tuple(match.group(1))
+            <= PlexSecurityRule.vulnerable_high
+            for line in context.lines
+        ):
             return []
         evidence = tuple(number for number, line in enumerate(context.lines, 1)
                          if "mass_user_rating_update" in line.lower()

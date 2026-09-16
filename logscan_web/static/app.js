@@ -80,12 +80,14 @@ function uploadFailureSummary(failures) {
   const labels = {
     "bad-filetype": "skipped - bad filetype",
     "invalid-kometa-log": "failed - not valid Kometa log file",
-    failed: "failed",
   };
-  return Object.entries(labels)
+  const categorized = Object.entries(labels)
     .filter(([type]) => counts[type])
     .map(([type, label]) => `${counts[type]} ${label}`)
-    .join("; ");
+  const failuresWithReasons = failures
+    .filter((failure) => uploadFailureType(failure.message) === "failed")
+    .map((failure) => `${failure.filename}: failed - ${failure.message}`);
+  return [...categorized, ...failuresWithReasons].join("; ");
 }
 
  function formatOverviewTimestamp(unixTimestamp) {

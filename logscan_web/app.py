@@ -413,7 +413,7 @@ def create_app() -> Flask:
         if len(new_people) > 2:
             names = "\n".join(f"- {person['name']}" for person in new_people)
             people_summary = (
-                f"**People Found:**\n{names}\n"
+                f"**People:**\n{names}\n"
                 f"[Review all missing people images]({url_for('people_page', _external=True)})"
             )
         else:
@@ -422,7 +422,7 @@ def create_app() -> Flask:
                 f"{'Yes' if person.get('tmdb_image_found') else 'No'}"
                 for person in new_people
             )
-            people_summary = f"**People Found:**\n{names}"
+            people_summary = f"**People:**\n{names}"
         source_line = (
             f"**Log Source:** [Click Here]({first['source_url']})\n"
             if first.get("source_url") else "**Log Source:** Not available\n"
