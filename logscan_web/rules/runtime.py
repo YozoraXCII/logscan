@@ -73,6 +73,7 @@ class RuntimeAnalysisRule:
                 rule.description,
                 rule.solution,
                 evidence,
+                rule.details,
             ))
 
         memory = _memory_gb(context, "Memory")
