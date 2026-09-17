@@ -7,6 +7,7 @@ from io import BytesIO
 from pathlib import Path, PurePosixPath
 
 from .models import ScanContext
+from .parity import discord_priority
 from .rules import RuleRegistry, migrated_rules
 from .categories import category_configuration
 
@@ -304,7 +305,7 @@ def scan_log(filename: str, content_bytes: bytes) -> ScanResult:
     for rule in migrated_rules():
         registry.register(rule)
     normalized = [finding.as_dict() for finding in registry.evaluate(context)]
-    normalized.sort(key=lambda item: {"critical": 0, "error": 1, "warning": 2, "schema": 3, "advice": 4}[item["severity"]])
+    normalized.sort(key=lambda item: discord_priority(item["id"]))
 
     metadata = {
         "kometa_version": kometa_version,
@@ -315,7 +316,7 @@ def scan_log(filename: str, content_bytes: bytes) -> ScanResult:
         "size_bytes": len(content_bytes),
         "counts": {
             level: sum(item["severity"] == level for item in normalized)
-            for level in ("critical", "warning", "schema", "advice")
+            for level in ("critical", "error", "warning", "schema", "advice")
         },
     }
     return ScanResult(

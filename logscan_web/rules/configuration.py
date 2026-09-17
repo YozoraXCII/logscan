@@ -25,7 +25,7 @@ RULES = (
     _rule("legacy_delete_unmanaged", "delete_unmanaged_collections"),
     _rule("legacy_git", "- git: PMM"),
     _rule("legacy_pmm", "- pmm:"),
-    _rule("mdblist_attribute", "mdblist_list attribute not allowed"),
+    _rule("mdblist_attribute", "mdblist_list attribute not allowed with Collection Level: Season"),
     _rule("metadata_attribute", "metadata attribute is required"),
     _rule("legacy_missing", "missing_path", "save_missing"),
     _rule("legacy_overlay_level", "overlay_level:"),

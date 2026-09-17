@@ -46,6 +46,9 @@ class Finding:
     details: str = ""
 
     def as_dict(self) -> dict:
+        message = f"**{self.title}**\nIssue: {self.description}\n\nProposed solution: {self.solution}"
+        if self.details:
+            message += f"\n\n{self.details}"
         return {
             "id": self.id,
             "severity": self.category,
@@ -53,5 +56,5 @@ class Finding:
             "description": self.description,
             "solution": self.solution,
             "evidence_lines": list(self.evidence_lines),
-            "message": self.details or f"**{self.title}**\nIssue: {self.description}\n\nProposed solution: {self.solution}",
+            "message": message,
         }

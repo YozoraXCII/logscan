@@ -58,6 +58,7 @@ class PlexSecurityRule:
             self.definition.description,
             self.definition.solution,
             evidence,
+            self.definition.details,
         )]
 
 
@@ -76,13 +77,16 @@ class RunOrderRule:
                          and number < len(context.lines)
                          and "- operations" not in context.lines[number].lower())
         return [Finding(self.id, self.definition.category, self.definition.title,
-                        self.definition.description, self.definition.solution, evidence)] if evidence else []
+                        self.definition.description, self.definition.solution, evidence,
+                        self.definition.details)] if evidence else []
 
 
 @dataclass(frozen=True)
 class RatingRoundingRule:
     definition: object
     detector: ClassVar[str] = "RATING_ROUNDING"
+    affected_low: ClassVar[tuple[int, int, int, int]] = (1, 40, 0, 7998)
+    affected_high: ClassVar[tuple[int, int, int, int]] = (1, 40, 3, 8555)
 
     @property
     def id(self) -> str:
@@ -91,16 +95,25 @@ class RatingRoundingRule:
     def evaluate(self, context: ScanContext) -> list[Finding]:
         if not any(
             (match := PlexSecurityRule.version_pattern.search(line))
-            and PlexSecurityRule.vulnerable_low <= PlexSecurityRule._version_tuple(match.group(1))
-            <= PlexSecurityRule.vulnerable_high
+            and self.affected_low < PlexSecurityRule._version_tuple(match.group(1))
+            < self.affected_high
             for line in context.lines
         ):
             return []
         evidence = tuple(number for number, line in enumerate(context.lines, 1)
                          if "mass_user_rating_update" in line.lower()
                          or "mass_episode_user_ratings_update" in line.lower())
+        affected_versions = [
+            match.group(1)
+            for line in context.lines
+            if (match := PlexSecurityRule.version_pattern.search(line))
+            and self.affected_low < PlexSecurityRule._version_tuple(match.group(1)) < self.affected_high
+        ]
+        details = self.definition.details
+        if affected_versions:
+            details += "\n\nDetected affected Plex version(s): " + ", ".join(affected_versions)
         return [Finding(self.id, self.definition.category, self.definition.title,
-                        self.definition.description, self.definition.solution, evidence)] if evidence else []
+                        self.definition.description, self.definition.solution, evidence, details)] if evidence else []
 
 
 CUSTOM_DETECTORS = {
@@ -129,7 +142,7 @@ RULES = (
     _same_line_rule("id_conversion", "Convert Warning: No ", "ID Found for"),
     _rule("image_unreadable", "PIL.UnidentifiedImageError: cannot"),
     _same_line_rule("flixpatrol_parse", "FlixPatrol Error:", "failed to parse"),
-    _rule("image_size", "in _upload_image"),
+    _rule("image_size", ", in _upload_image"),
     _rule("internal_server", "internal_server_error"),
     _same_line_rule("mass_update", "Config Error: Operation mass_", "without a successful"),
     _rule("metadata_load", "Metadata File Failed To Load"),
@@ -138,8 +151,8 @@ RULES = (
     _rule("plex_no_items", "Plex Error: No Items found in Plex"),
     _rule("overlay_font", "Overlay Error: font:"),
     _rule("overlay_reset", "Reapply Overlays: True", "Reset Overlays: ["),
-    _rule("overlay_existing", "Poster already has an Overlay"),
-    _rule("overlay_image", "Overlay Image not found"),
+    _rule("overlay_existing", "Overlay Error: Poster already has an Overlay"),
+    _rule("overlay_image", "Overlay Error: Overlay Image not found"),
     _same_line_rule("playlist_library", "Playlist Error: Library:", "not defined"),
     _same_line_rule("plex_regex", "Plex Error: ", "No matches found with regex pattern"),
     _same_line_rule("plex_library", "Plex Error: Plex Library", "not found"),

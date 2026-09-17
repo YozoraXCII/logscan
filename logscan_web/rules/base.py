@@ -55,4 +55,5 @@ class TextRule:
             self.definition.description,
             self.definition.solution,
             evidence,
+            self.definition.details,
         )]
